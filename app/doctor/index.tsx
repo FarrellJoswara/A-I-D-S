@@ -1,31 +1,94 @@
-// app/doctor/index.tsx
-import React from "react";
-import { SafeAreaView, View, Text, StyleSheet } from "react-native";
-import { Stack } from "expo-router";
+import { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
-export default function DoctorHome() {
+export default function DoctorHomeScreen() {
+  const [name, setName] = useState("");
+  const router = useRouter();
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <Stack.Screen
-        options={{
-          title: "Doctor",
-          headerBackTitleVisible: false,
-        }}
-      />
-      <View style={styles.container}>
-        <Text style={styles.title}>Doctor Portal</Text>
-        <Text style={styles.text}>
-          In the future, this is where you can search for patients, scan a QR
-          code, or review records that have been shared with you.
-        </Text>
+    <View style={styles.container}>
+      <Text style={styles.header}>Patient Lookup</Text>
+      <Text style={styles.subheader}>Search for a patient by name</Text>
+
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter patient name..."
+          placeholderTextColor="#5b6b75"
+          value={name}
+          onChangeText={setName}
+        />
+
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => {
+            if (name.trim()) {
+              router.push(`/patient/${name}`);
+            }
+          }}
+        >
+          <Ionicons name="search" size={22} color="#ffffff" />
+        </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#ffffff" },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 40 },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
-  text: { fontSize: 16, color: "#444" },
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 70,
+    backgroundColor: "#f5f7fa",
+  },
+
+  header: {
+    fontSize: 30,
+    fontWeight: "700",
+    color: "#1e3a5f",
+    marginBottom: 4,
+  },
+
+  subheader: {
+    fontSize: 16,
+    color: "#5b6b75",
+    marginBottom: 30,
+  },
+
+  searchContainer: {
+    flexDirection: "row",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+
+  input: {
+    flex: 1,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: "#1e3a5f",
+  },
+
+  searchButton: {
+    marginLeft: 10,
+    backgroundColor: "#1e3a5f",
+    padding: 10,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });

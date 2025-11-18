@@ -1,14 +1,14 @@
 // app/patient/index.tsx
+import { Ionicons } from "@expo/vector-icons";
+import { Link, Stack } from "expo-router";
 import React from "react";
 import {
-  SafeAreaView,
-  View,
-  Text,
-  StyleSheet,
   Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
-import { Link, Stack } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 
 export default function PatientMainPage() {
   return (
@@ -44,6 +44,19 @@ export default function PatientMainPage() {
             </Pressable>
           </Link>
 
+          {/* My Records */}
+          <Link href="/patient/my-records" asChild>
+            <Pressable style={styles.card}>
+              <View style={styles.cardLeft}>
+                <View style={styles.iconBubble}>
+                  <Ionicons name="document-text-outline" size={24} color="#2e2e2eff" />
+                </View>
+                <Text style={styles.cardText}>My Records</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#555" />
+            </Pressable>
+          </Link>
+
           {/* ACCESS HISTORY */}
           <Link href="/patient/access-history" asChild>
             <Pressable style={styles.card}>
@@ -65,6 +78,19 @@ export default function PatientMainPage() {
                   <Ionicons name="add-circle" size={26} color="#f97316" />
                 </View>
                 <Text style={styles.cardText}>Add</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#555" />
+            </Pressable>
+          </Link>
+
+          {/* MANAGE PERMISSIONS */}
+          <Link href="/patient/permissions" asChild>
+            <Pressable style={styles.card}>
+              <View style={styles.cardLeft}>
+                <View style={styles.iconBubble}>
+                  <Ionicons name="lock-closed" size={24} color="#ff0b75" />
+                </View>
+                <Text style={styles.cardText}>Manage Permissions</Text>
               </View>
               <Ionicons name="chevron-forward" size={22} color="#555" />
             </Pressable>

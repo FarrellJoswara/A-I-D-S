@@ -56,6 +56,19 @@ export default function DoctorMainPage() {
             </Pressable>
           </Link>
 
+          {/* ACCESS REQUESTS */}
+          <Link href="/doctor/requests" asChild>
+            <Pressable style={styles.card}>
+              <View style={styles.cardLeft}>
+                <View style={styles.iconBubble}>
+                  <Ionicons name="alert-circle" size={24} color="#f97316" />
+                </View>
+                <Text style={styles.cardText}>Access Requests</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#555" />
+            </Pressable>
+          </Link>
+
           {/* RECENT */}
           <Link href="/doctor/recent" asChild>
             <Pressable style={styles.card}>
@@ -69,7 +82,18 @@ export default function DoctorMainPage() {
             </Pressable>
           </Link>
 
-          
+          {/* ADD NOTE */}
+          <Link href="/doctor/add-note" asChild>
+            <Pressable style={styles.card}>
+              <View style={styles.cardLeft}>
+                <View style={styles.iconBubble}>
+                  <Ionicons name="document-text" size={24} color="#2e2e2e" />
+                </View>
+                <Text style={styles.cardText}>Add Note</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#555" />
+            </Pressable>
+          </Link>
         </View>
       </View>
     </SafeAreaView>

@@ -1,13 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link, Stack } from "expo-router";
-import React from "react";
-import {
-  Pressable,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 export default function DoctorMainPage() {
   return (
@@ -15,7 +8,6 @@ export default function DoctorMainPage() {
       <Stack.Screen
         options={{
           title: "Doctor",
-          headerBackTitleVisible: false,
         }}
       />
 
@@ -43,33 +35,18 @@ export default function DoctorMainPage() {
             </Pressable>
           </Link>
 
-          {/* SEARCH PATIENT */}
-          <Link href="/doctor/search" asChild>
+          {/* REQUEST ACCESS */}
+          <Link href="/doctor/request-access" asChild>
             <Pressable style={styles.card}>
               <View style={styles.cardLeft}>
                 <View style={styles.iconBubble}>
-                  <Ionicons name="search" size={24} color="#10b981" />
+                  <Ionicons name="lock-closed-outline" size={24} color="#ff0b75" />
                 </View>
-                <Text style={styles.cardText}>Search Patient</Text>
+                <Text style={styles.cardText}>Request Access</Text>
               </View>
               <Ionicons name="chevron-forward" size={22} color="#555" />
             </Pressable>
           </Link>
-
-          {/* RECENT */}
-          <Link href="/doctor/recent" asChild>
-            <Pressable style={styles.card}>
-              <View style={styles.cardLeft}>
-                <View style={styles.iconBubble}>
-                  <Ionicons name="time" size={24} color="#ff0b75" />
-                </View>
-                <Text style={styles.cardText}>Recently Viewed</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={22} color="#555" />
-            </Pressable>
-          </Link>
-
-          
         </View>
       </View>
     </SafeAreaView>
@@ -145,5 +122,3 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
 });
-
-

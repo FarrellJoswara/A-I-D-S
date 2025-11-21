@@ -16,9 +16,10 @@ import { AccountTxTransaction, Client } from "xrpl";
 import { useWallet } from "../context/WalletContext";
 
 type AccessRequest = {
-  id: string; // tx hash
-  requester: string; // wallet that requested access
+  id: string;
+  requester: string;
   timestamp: number;
+  message?: string;
 };
 
 export default function AccessRequestsPage() {
@@ -31,7 +32,6 @@ export default function AccessRequestsPage() {
 
     const fetchRequests = async () => {
       setLoading(true);
-
       try {
         const client = new Client("wss://s.altnet.rippletest.net:51233");
         await client.connect();
@@ -39,41 +39,38 @@ export default function AccessRequestsPage() {
         const response = await client.request({
           command: "account_tx",
           account: wallet.classicAddress,
-          ledger_index_min: -1,
-          ledger_index_max: -1,
           limit: 50,
+          ledger_index_min: -1,   // earliest
+          ledger_index_max: -1,   // latest
         });
 
-        const txs: AccountTxTransaction[] = response.result.transactions || [];
+        const txs: AccountTxTransaction[] = (response.result as any).transactions || [];
 
         const requestsList: AccessRequest[] = txs
           .map((txItem) => {
-            const tx = txItem.tx as any;
+            const tx = (txItem.tx as any) || {};
+            if (!tx.Memos || !Array.isArray(tx.Memos)) return null;
 
-            // Skip transactions without memos
-            if (!tx.Memos || !Array.isArray(tx.Memos) || tx.Memos.length === 0) {
-              return null;
-            }
+            for (const memoEntry of tx.Memos) {
+              try {
+                const memoHex = memoEntry?.Memo?.MemoData;
+                if (!memoHex) continue;
 
-            try {
-              const memoHex = tx.Memos[0]?.Memo?.MemoData;
-              if (!memoHex) return null;
+                const memoStr = Buffer.from(memoHex, "hex").toString();
+                const memoObj = JSON.parse(memoStr);
 
-              const memoStr = Buffer.from(memoHex, "hex").toString();
-              const memoObj = JSON.parse(memoStr);
-
-              if (memoObj.requestAccess && memoObj.requester) {
-                return {
-                  id: tx.hash,
-                  requester: memoObj.requester,
-                  timestamp: tx.date || Math.floor(Date.now() / 1000),
-                };
+                if (memoObj.type === "accessRequest" && memoObj.requester) {
+                  return {
+                    id: tx.hash || Math.random().toString(), // fallback
+                    requester: memoObj.requester,
+                    timestamp: memoObj.timestamp || Math.floor(Date.now() / 1000),
+                    message: memoObj.message,
+                  };
+                }
+              } catch {
+                continue;
               }
-            } catch (err) {
-              console.warn("Skipping invalid memo:", err);
-              return null;
             }
-
             return null;
           })
           .filter(Boolean) as AccessRequest[];
@@ -97,19 +94,20 @@ export default function AccessRequestsPage() {
       `Grant access to ${request.requester}?`,
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Approve", onPress: () => Alert.alert("Access Granted") },
+        {
+          text: "Approve",
+          onPress: () => {
+            setRequests((prev) => prev.filter((r) => r.id !== request.id));
+            Alert.alert("Access Granted");
+          },
+        },
       ]
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: "Access Requests",
-          headerShown: true,
-        }}
-      />
+      <Stack.Screen options={{ title: "Access Requests", headerShown: true }} />
 
       {loading ? (
         <ActivityIndicator size="large" color="#0b7cff" style={{ marginTop: 40 }} />
@@ -124,11 +122,12 @@ export default function AccessRequestsPage() {
       ) : (
         <FlatList
           data={requests}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => item.id || index.toString()}
           contentContainerStyle={{ padding: 16 }}
           renderItem={({ item }) => (
             <View style={styles.requestCard}>
               <Text style={styles.requesterText}>{item.requester}</Text>
+              {item.message && <Text style={styles.messageText}>{item.message}</Text>}
               <Text style={styles.timestampText}>
                 {new Date(item.timestamp * 1000).toLocaleString()}
               </Text>
@@ -160,6 +159,7 @@ const styles = StyleSheet.create({
     borderColor: "#1e3a5f",
   },
   requesterText: { fontSize: 16, fontWeight: "600", color: "#0b1b3b" },
+  messageText: { fontSize: 14, color: "#444", marginTop: 4 },
   timestampText: { fontSize: 12, color: "#666", marginTop: 4 },
   approveButton: {
     marginTop: 8,

@@ -1,155 +1,188 @@
-// app/plus.tsx
+// app/patient/manage-permissions.tsx
+import { Ionicons } from "@expo/vector-icons";
+import { Buffer } from "buffer";
 import { Stack } from "expo-router";
-import React, { useEffect, useState } from "react";
-import {
-    Button,
-    FlatList,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-} from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Client, Payment, xrpToDrops } from "xrpl";
+import { useWallet } from "../context/WalletContext";
 
-// Example types
-type Doctor = {
-  address: string;
-  name: string; // from IPFS profile
+(global as any).Buffer = Buffer;
+
+type Permission = {
+  id: string;
+  user: string;
+  allowedDocuments: string[];
 };
 
-export default function PlusScreen() {
-  const [ipfsCID, setIpfsCID] = useState("");
-  const [fileHash, setFileHash] = useState("");
-  const [doctorAddress, setDoctorAddress] = useState("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [patientRecords, setPatientRecords] = useState<any[]>([]); // replace with proper type
+export default function ManagePermissionsPage() {
+  const { wallet } = useWallet();
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Fetch doctors list or patient records (mocked here)
   useEffect(() => {
-    async function fetchDoctors() {
-      // TODO: fetch from on-chain or off-chain index
-      setDoctors([
-        { address: "0xABC123...", name: "Dr. Alice" },
-        { address: "0xDEF456...", name: "Dr. Bob" },
-      ]);
-    }
+    if (!wallet) return;
 
-    async function fetchRecords() {
-      // TODO: fetch records for this patient via contract
-      setPatientRecords([]);
-    }
+    const fetchPermissions = async () => {
+      setLoading(true);
+      try {
+        const client = new Client("wss://s.altnet.rippletest.net:51233");
+        await client.connect();
 
-    fetchDoctors();
-    fetchRecords();
-  }, []);
+        const resp = await client.request({
+          command: "account_tx",
+          account: wallet.classicAddress,
+          ledger_index_min: -1,
+          ledger_index_max: -1,
+          limit: 50,
+        });
 
-  // Add new medical record
-  const handleAddRecord = async () => {
-    // Call your contract's addRecord function
-    console.log("Adding record", ipfsCID, fileHash);
-  };
+        const txs = resp.result.transactions || [];
+        const perms: Permission[] = [];
 
-  // Grant access to a doctor
-  const handleGrantAccess = async (doctorAddr: string) => {
-    console.log("Granting access to", doctorAddr);
-    // call grantAccess(recordId, doctorAddr)
-  };
+        txs.forEach((txItem: any) => {
+          const tx = txItem.tx || {};
+          if (!tx.Memos || !Array.isArray(tx.Memos)) return;
 
-  // Revoke access from a doctor
-  const handleRevokeAccess = async (doctorAddr: string) => {
-    console.log("Revoking access from", doctorAddr);
-    // call revokeAccess(recordId, doctorAddr)
+          tx.Memos.forEach((memoEntry: any) => {
+            try {
+              const memoHex = memoEntry?.Memo?.MemoData;
+              if (!memoHex) return;
+
+              const memoStr = Buffer.from(memoHex, "hex").toString();
+              const memoObj = JSON.parse(memoStr);
+
+              if (memoObj.type === "grantAccess" && memoObj.user) {
+                perms.push({
+                  id: tx.hash,
+                  user: memoObj.user,
+                  allowedDocuments: memoObj.documents || [],
+                });
+              }
+            } catch {
+              // skip invalid memo
+            }
+          });
+        });
+
+        setPermissions(perms);
+        await client.disconnect();
+      } catch (err) {
+        console.error(err);
+        Alert.alert("Error", "Failed to fetch permissions.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPermissions();
+  }, [wallet]);
+
+  const removePermission = async (permId: string, user: string) => {
+    if (!wallet) return;
+    Alert.alert("Remove Access", `Remove access for ${user}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        onPress: async () => {
+          try {
+            const client = new Client("wss://s.altnet.rippletest.net:51233");
+            await client.connect();
+
+            const payment: Payment = {
+              TransactionType: "Payment",
+              Account: wallet.classicAddress,
+              Destination: wallet.classicAddress, // send to self
+              Amount: xrpToDrops("0.001"),
+              Memos: [
+                {
+                  Memo: {
+                    MemoData: Buffer.from(
+                      JSON.stringify({ type: "revokeAccess", user })
+                    ).toString("hex"),
+                  },
+                },
+              ],
+            };
+
+            const prepared = await client.autofill(payment);
+            const signed = wallet.sign(prepared);
+            const tx = await client.submitAndWait(signed.tx_blob);
+
+            const txResult = (tx.result.meta as any)?.TransactionResult;
+            if (txResult === "tesSUCCESS") {
+              setPermissions((prev) => prev.filter((p) => p.id !== permId));
+              Alert.alert("Success", `Access revoked for ${user}`);
+            } else {
+              throw new Error(`Transaction failed: ${txResult || "Unknown"}`);
+            }
+
+            await client.disconnect();
+          } catch (err) {
+            console.error(err);
+            Alert.alert("Error", String(err));
+          }
+        },
+      },
+    ]);
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <Stack.Screen options={{ title: "Manage Records" }} />
-      <View style={styles.container}>
-        <Text style={styles.title}>Add New Record</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="IPFS CID"
-          value={ipfsCID}
-          onChangeText={setIpfsCID}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="File hash (SHA-256)"
-          value={fileHash}
-          onChangeText={setFileHash}
-        />
-        <Button title="Add Record" onPress={handleAddRecord} />
+    <SafeAreaView style={styles.container}>
+      <Stack.Screen options={{ title: "Manage Permissions" }} />
 
-        <Text style={[styles.title, { marginTop: 30 }]}>Your Records</Text>
+      {loading ? (
+        <Text style={{ marginTop: 40 }}>Loading...</Text>
+      ) : permissions.length === 0 ? (
+        <View style={styles.empty}>
+          <Ionicons name="lock-closed-outline" size={64} color="#ccc" />
+          <Text style={styles.emptyText}>No users have access yet</Text>
+        </View>
+      ) : (
         <FlatList
-          data={patientRecords}
-          keyExtractor={(item) => item.id.toString()}
+          data={permissions}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ padding: 16 }}
           renderItem={({ item }) => (
-            <View style={styles.recordCard}>
-              <Text>Record ID: {item.id}</Text>
-              <Text>IPFS CID: {item.ipfsCID}</Text>
-              <Text>Granted Doctors:</Text>
-              {item.grantedDoctors?.map((d: Doctor) => (
-                <View key={d.address} style={styles.doctorRow}>
-                  <Text>{d.name}</Text>
-                  <TouchableOpacity onPress={() => handleRevokeAccess(d.address)}>
-                    <Text style={styles.revoke}>Revoke</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-              <TextInput
-                style={styles.input}
-                placeholder="Doctor Address"
-                value={doctorAddress}
-                onChangeText={setDoctorAddress}
-              />
-              <Button title="Grant Access" onPress={() => handleGrantAccess(doctorAddress)} />
+            <View style={styles.card}>
+              <Text style={styles.user}>{item.user}</Text>
+              <Text style={styles.docs}>
+                Documents: {item.allowedDocuments.join(", ") || "All"}
+              </Text>
+              <TouchableOpacity
+                style={styles.removeButton}
+                onPress={() => removePermission(item.id, item.user)}
+              >
+                <Text style={styles.removeText}>Remove Access</Text>
+              </TouchableOpacity>
             </View>
           )}
         />
-      </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 40,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 16,
-    color: "#ff0b75",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 10,
+  container: { flex: 1, backgroundColor: "#f5f7fa" },
+  empty: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyText: { fontSize: 16, color: "#999", marginTop: 12 },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 12,
-    borderRadius: 6,
-  },
-  recordCard: {
     borderWidth: 1,
-    borderColor: "#eee",
-    padding: 12,
-    marginBottom: 12,
+    borderColor: "#1e3a5f",
+  },
+  user: { fontSize: 16, fontWeight: "600", color: "#0b1b3b" },
+  docs: { fontSize: 14, color: "#444", marginVertical: 4 },
+  removeButton: {
+    backgroundColor: "#ff4d4d",
+    paddingVertical: 8,
     borderRadius: 8,
+    alignItems: "center",
   },
-  doctorRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginVertical: 4,
-  },
-  revoke: {
-    color: "red",
-    fontWeight: "600",
-  },
+  removeText: { color: "#fff", fontWeight: "600" },
 });

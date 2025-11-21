@@ -29,21 +29,6 @@ export default function PatientMainPage() {
         </View>
 
         <View style={styles.cardsContainer}>
-          {/* GENERAL */}
-{/*
-<Link href="/patient/general" asChild>
-            <Pressable style={styles.card}>
-              <View style={styles.cardLeft}>
-                <View style={styles.iconBubble}>
-                  <Ionicons name="person" size={24} color="#0b7cff" />
-                </View>
-                <Text style={styles.cardText}>General</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={22} color="#555" />
-            </Pressable>
-          </Link>
-*/}
-
           {/* My Records */}
           <Link href="/patient/my-records" asChild>
             <Pressable style={styles.card}>
@@ -57,7 +42,20 @@ export default function PatientMainPage() {
             </Pressable>
           </Link>
 
-          {/* ACCESS HISTORY */}
+          {/* Access Requests */}
+          <Link href="/patient/requests" asChild>
+            <Pressable style={styles.card}>
+              <View style={styles.cardLeft}>
+                <View style={styles.iconBubble}>
+                  <Ionicons name="person-add-outline" size={24} color="#0b7cff" />
+                </View>
+                <Text style={styles.cardText}>Access Requests</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#555" />
+            </Pressable>
+          </Link>
+
+          {/* Access History */}
           <Link href="/patient/access-history" asChild>
             <Pressable style={styles.card}>
               <View style={styles.cardLeft}>
@@ -70,20 +68,7 @@ export default function PatientMainPage() {
             </Pressable>
           </Link>
 
-          {/* ADD 
-          <Link href="/patient/plus" asChild>
-            <Pressable style={styles.card}>
-              <View style={styles.cardLeft}>
-                <View style={styles.iconBubble}>
-                  <Ionicons name="add-circle" size={26} color="#f97316" />
-                </View>
-                <Text style={styles.cardText}>Add</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={22} color="#555" />
-            </Pressable>
-          </Link>*/}
-
-          {/* MANAGE PERMISSIONS */}
+          {/* Manage Permissions */}
           <Link href="/patient/access-management" asChild>
             <Pressable style={styles.card}>
               <View style={styles.cardLeft}>
@@ -96,7 +81,7 @@ export default function PatientMainPage() {
             </Pressable>
           </Link>
 
-          {/* NOTIFICATIONS */}
+          {/* Notifications */}
           <Link href="/patient/notifications" asChild>
             <Pressable style={styles.card}>
               <View style={styles.cardLeft}>

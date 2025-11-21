@@ -1,9 +1,15 @@
 // app/_layout.tsx
 import { Stack } from "expo-router";
-import React from "react";
+import { WalletProvider } from "./context/WalletContext";
 
-export default function Layout() {
+export default function RootLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }} />
+    <WalletProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+        }}
+      />
+    </WalletProvider>
   );
 }

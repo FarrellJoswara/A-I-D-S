@@ -1,10 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Buffer } from "buffer";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Client, Payment, Wallet, xrpToDrops } from "xrpl";
+(global as any).Buffer = Buffer;
+
 
 import { uploadFileToPinata, uploadRecordMetadata } from "../../../../utils/pinata";
 
@@ -14,6 +18,9 @@ export default function AddRecord() {
 
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Replace with the doctor wallet info
+  const doctorWallet = Wallet.fromSeed("sEdSkAhvagdUJQoZmQPdKckGJAf61ig"); 
 
   async function pickFile() {
     try {
@@ -38,9 +45,7 @@ export default function AddRecord() {
       setUploading(true);
 
       // 1️⃣ Read file content as base64
-      const fileContent = await readAsStringAsync(file.uri, {
-        encoding: "base64",
-      });
+      const fileContent = await readAsStringAsync(file.uri, { encoding: "base64" });
       
       // 2️⃣ Hash the file content
       const fileHash = await Crypto.digestStringAsync(
@@ -49,7 +54,7 @@ export default function AddRecord() {
         { encoding: Crypto.CryptoEncoding.HEX }
       );
 
-      // 3️⃣ Upload file using uploadFileToPinata utility
+      // 3️⃣ Upload file to Pinata
       const fileRes = await uploadFileToPinata({
         uri: file.uri,
         type: file.mimeType || "application/octet-stream",
@@ -61,7 +66,7 @@ export default function AddRecord() {
       // 4️⃣ Build metadata JSON
       const metadata = {
         patient_wallet: address,
-        doctor_wallet: "0xABC_DOCTOR_WALLET", // replace with dynamic if needed
+        doctor_wallet: doctorWallet.classicAddress,
         record_type: "Blood Test Report",
         timestamp: Math.floor(Date.now() / 1000),
         ipfs_file_cid: fileCID,
@@ -77,20 +82,40 @@ export default function AddRecord() {
         },
       };
 
-      // 5️⃣ Upload metadata via utils
+      // 5️⃣ Upload metadata to Pinata
       const metadataRes = await uploadRecordMetadata(metadata);
       const metadataCID = metadataRes.IpfsHash;
       console.log("Metadata CID:", metadataCID);
 
-      Alert.alert(
-        "Upload Successful!", 
-        `File CID: ${fileCID}\nMetadata CID: ${metadataCID}`,
-        [
+      // 6️⃣ Send XRPL payment with metadataCID in Memos
+      const client = new Client("wss://s.altnet.rippletest.net:51233"); // Testnet
+      await client.connect();
+
+      const payment: Payment = {
+        TransactionType: "Payment",
+        Account: doctorWallet.classicAddress,
+        Destination: address as string,
+        Amount: xrpToDrops("0.001"),
+        Memos: [
           {
-            text: "OK",
-            onPress: () => router.back(),
+            Memo: {
+              MemoData: Buffer.from(JSON.stringify({ metadataCID })).toString("hex"),
+            },
           },
-        ]
+        ],
+      };
+
+      const prepared = await client.autofill(payment);
+      const signed = doctorWallet.sign(prepared);
+      const tx = await client.submitAndWait(signed.tx_blob);
+      console.log("XRPL Payment Result:", tx);
+
+      await client.disconnect();
+
+      Alert.alert(
+        "Upload Successful!",
+        `File CID: ${fileCID}\nMetadata CID: ${metadataCID}\nXRPL Tx: ${tx.result.tx_json.hash}`,
+        [{ text: "OK", onPress: () => router.back() }]
       );
     } catch (err) {
       console.log("Upload error:", err);
@@ -112,9 +137,7 @@ export default function AddRecord() {
 
       <TouchableOpacity style={styles.fileButton} onPress={pickFile}>
         <Ionicons name="cloud-upload-outline" size={24} color="#1e3a5f" />
-        <Text style={styles.fileText}>
-          {file ? file.name : "Choose PDF or image"}
-        </Text>
+        <Text style={styles.fileText}>{file ? file.name : "Choose PDF or image"}</Text>
       </TouchableOpacity>
 
       {file && (
@@ -133,43 +156,18 @@ export default function AddRecord() {
         onPress={uploadFile}
       >
         {uploading && <Ionicons name="sync" size={20} color="white" style={styles.spinner} />}
-        <Text style={styles.uploadText}>
-          {uploading ? "Uploading..." : "Upload to IPFS"}
-        </Text>
+        <Text style={styles.uploadText}>{uploading ? "Uploading..." : "Upload to IPFS & XRPL"}</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    paddingHorizontal: 24, 
-    paddingTop: 50, 
-    backgroundColor: "#f5f7fa" 
-  },
-  backButton: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    marginBottom: 20 
-  },
-  backText: { 
-    fontSize: 16, 
-    marginLeft: 4, 
-    color: "#1e3a5f", 
-    fontWeight: "600" 
-  },
-  header: { 
-    fontSize: 26, 
-    fontWeight: "700", 
-    color: "#1e3a5f", 
-    marginBottom: 8 
-  },
-  subHeader: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 24,
-  },
+  container: { flex: 1, paddingHorizontal: 24, paddingTop: 50, backgroundColor: "#f5f7fa" },
+  backButton: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+  backText: { fontSize: 16, marginLeft: 4, color: "#1e3a5f", fontWeight: "600" },
+  header: { fontSize: 26, fontWeight: "700", color: "#1e3a5f", marginBottom: 8 },
+  subHeader: { fontSize: 14, color: "#666", marginBottom: 24 },
   fileButton: {
     backgroundColor: "white",
     borderRadius: 12,
@@ -179,24 +177,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  fileText: { 
-    marginLeft: 10, 
-    fontSize: 16, 
-    color: "#1e3a5f", 
-    fontWeight: "500",
-    flex: 1,
-  },
-  fileInfo: {
-    backgroundColor: "#e8f4f8",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
-  },
-  fileInfoText: {
-    fontSize: 14,
-    color: "#1e3a5f",
-    marginVertical: 2,
-  },
+  fileText: { marginLeft: 10, fontSize: 16, color: "#1e3a5f", fontWeight: "500", flex: 1 },
+  fileInfo: { backgroundColor: "#e8f4f8", padding: 12, borderRadius: 8, marginTop: 12 },
+  fileInfoText: { fontSize: 14, color: "#1e3a5f", marginVertical: 2 },
   uploadButton: {
     marginTop: 40,
     backgroundColor: "#1e3a5f",
@@ -206,15 +189,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
   },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  uploadText: { 
-    color: "white", 
-    fontSize: 18, 
-    fontWeight: "700" 
-  },
-  spinner: {
-    marginRight: 8,
-  },
+  disabledButton: { opacity: 0.5 },
+  uploadText: { color: "white", fontSize: 18, fontWeight: "700" },
+  spinner: { marginRight: 8 },
 });

@@ -4,7 +4,7 @@ import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 export default function DoctorMainPage() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <Stack.Screen
         options={{
           title: "Doctor",

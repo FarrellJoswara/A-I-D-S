@@ -5,7 +5,7 @@ import { Stack } from "expo-router";
 
 export default function GeneralScreen() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <Stack.Screen options={{ title: "General Info" }} />
       <View style={styles.container}>
         <Text style={styles.title}>General Information</Text>

@@ -21,7 +21,7 @@
     "@reown/walletkit": "^1.4.1",
     "@walletconnect/react-native-compat": "^2.23.0",
     "axios": "^1.13.2",
-    "ethers": "5.7.2",
+    "ethers": "^5.8.0",
     "expo": "~54.0.24",
     "expo-application": "~7.0.7",
     "expo-barcode-scanner": "^13.0.1",

@@ -11,7 +11,7 @@ import {
 
 export default function PatientMainPage() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <Stack.Screen
         options={{
           title: "Patient"

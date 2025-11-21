@@ -10,21 +10,30 @@ import {
   Text,
   View,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 export default function WalletLoginScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // for bottom-safe padding
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
   // Navigate after login
-  const navigateAfterLogin = () => {
-    router.push("/person-selection");
+  const navigateAfterLogin = (address?: string) => {
+    const params = address ? { walletAddress: address } : undefined;
+    router.push({
+      pathname: "/person-selection",
+      params,
+    });
   };
 
   // Development bypass login
   const bypassLogin = () => {
     Alert.alert("Development Mode", "Bypassing authentication for testing", [
-      { text: "Continue", onPress: navigateAfterLogin },
+      {
+        text: "Continue",
+        onPress: () => navigateAfterLogin("0xDEV_BYPASS_ADDRESS"),
+      },
     ]);
   };
 
@@ -43,9 +52,8 @@ export default function WalletLoginScreen() {
         setTimeout(() => {
           const mockAddress = "0x" + Math.random().toString(16).substring(2, 42);
           setWalletAddress(mockAddress);
-          Alert.alert("Wallet Connected", `Address: ${mockAddress}`);
           setIsConnecting(false);
-          navigateAfterLogin();
+          navigateAfterLogin(mockAddress);
         }, 2000);
       } else {
         Alert.alert("MetaMask Not Found", "Install MetaMask?", [
@@ -73,7 +81,9 @@ export default function WalletLoginScreen() {
     try {
       setIsConnecting(true);
       const wcUri = "wc:00e46b69-d0cc-4b3e-b6a2-cee442f97188@2";
-      const metamaskWCUrl = `https://metamask.app.link/wc?uri=${encodeURIComponent(wcUri)}`;
+      const metamaskWCUrl = `https://metamask.app.link/wc?uri=${encodeURIComponent(
+        wcUri
+      )}`;
       const canOpen = await Linking.canOpenURL(metamaskWCUrl);
 
       if (canOpen) {
@@ -81,14 +91,15 @@ export default function WalletLoginScreen() {
         setTimeout(() => {
           const mockAddress = "0x" + Math.random().toString(16).substring(2, 42);
           setWalletAddress(mockAddress);
-          Alert.alert("Connected via WalletConnect", `Address: ${mockAddress}`);
           setIsConnecting(false);
-          navigateAfterLogin();
+          navigateAfterLogin(mockAddress);
         }, 2000);
       } else {
-        Alert.alert("No Wallet Found", "Please install MetaMask or another wallet", [
-          { text: "OK", onPress: () => setIsConnecting(false) },
-        ]);
+        Alert.alert(
+          "No Wallet Found",
+          "Please install MetaMask or another wallet",
+          [{ text: "OK", onPress: () => setIsConnecting(false) }]
+        );
       }
     } catch (err: any) {
       Alert.alert("Connection Error", err.message || "Failed to connect");
@@ -111,95 +122,116 @@ export default function WalletLoginScreen() {
     `${address.slice(0, 6)}...${address.slice(-4)}`;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Ionicons name="wallet" size={64} color="#FF9900" />
-        <Text style={styles.title}>Connect Your Wallet</Text>
-        <Text style={styles.subtitle}>
-          Connect with MetaMask to access your account
-        </Text>
-      </View>
-
-      {walletAddress ? (
-        <View style={styles.connectedContainer}>
-          <View style={styles.addressCard}>
-            <Ionicons name="checkmark-circle" size={48} color="#4CAF50" />
-            <Text style={styles.connectedText}>Connected</Text>
-            <View style={styles.addressBadge}>
-              <Text style={styles.walletAddress}>{shortenAddress(walletAddress)}</Text>
-            </View>
-            <Text style={styles.fullAddress}>{walletAddress}</Text>
-          </View>
-
-          <Pressable style={styles.disconnectButton} onPress={disconnectWallet}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Ionicons name="log-out-outline" size={20} color="#fff" />
-              <Text style={styles.disconnectText}>Disconnect</Text>
-            </View>
-          </Pressable>
+    <SafeAreaView
+    style={styles.safeArea}
+    edges={["top", "bottom", "left", "right"]}
+  >
+      <View
+        style={[
+          styles.container,
+          { paddingBottom: 20 + insets.bottom }, // keep buttons above home bar
+        ]}
+      >
+        <View style={styles.header}>
+          <Ionicons name="wallet" size={64} color="#FF9900" />
+          <Text style={styles.title}>Connect Your Wallet</Text>
+          <Text style={styles.subtitle}>
+            Connect with MetaMask to access your account
+          </Text>
         </View>
-      ) : (
-        <View style={styles.buttonContainer}>
-          <Pressable
-            style={[styles.connectButton, isConnecting && styles.disabledButton]}
-            onPress={connectWallet}
-            disabled={isConnecting}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ionicons name="logo-web-component" size={24} color="#fff" />
-              <Text style={styles.connectText}>
-                {isConnecting ? "Connecting..." : "Connect MetaMask"}
-              </Text>
+
+        {walletAddress ? (
+          <View style={styles.connectedContainer}>
+            <View className="addressCard" style={styles.addressCard}>
+              <Ionicons name="checkmark-circle" size={48} color="#4CAF50" />
+              <Text style={styles.connectedText}>Connected</Text>
+              <View style={styles.addressBadge}>
+                <Text style={styles.walletAddress}>
+                  {shortenAddress(walletAddress)}
+                </Text>
+              </View>
+              <Text style={styles.fullAddress}>{walletAddress}</Text>
             </View>
-          </Pressable>
 
-          <Pressable
-            style={[
-              styles.connectButton,
-              styles.walletConnectButton,
-              isConnecting && styles.disabledButton,
-            ]}
-            onPress={connectWithWalletConnect}
-            disabled={isConnecting}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ionicons name="scan" size={24} color="#fff" />
-              <Text style={styles.connectText}>
-                {isConnecting ? "Connecting..." : "WalletConnect"}
-              </Text>
-            </View>
-          </Pressable>
-
-          {/* Info */}
-          <View style={styles.infoBox}>
-            <Ionicons name="information-circle" size={20} color="#666" />
-            <Text style={styles.infoText}>
-              Your wallet will open to approve the connection
-            </Text>
-          </View>
-
-          {/* Development Bypass Button */}
-          {__DEV__ && (
-            <Pressable style={styles.devButton} onPress={bypassLogin}>
+            <Pressable style={styles.disconnectButton} onPress={disconnectWallet}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Ionicons name="bug" size={20} color="#fff" />
-                <Text style={styles.devButtonText}>DEV: Skip Login</Text>
+                <Ionicons name="log-out-outline" size={20} color="#fff" />
+                <Text style={styles.disconnectText}>Disconnect</Text>
               </View>
             </Pressable>
-          )}
-        </View>
-      )}
-    </View>
+          </View>
+        ) : (
+          <View style={styles.buttonContainer}>
+            <Pressable
+              style={[styles.connectButton, isConnecting && styles.disabledButton]}
+              onPress={connectWallet}
+              disabled={isConnecting}
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <Ionicons name="logo-web-component" size={24} color="#fff" />
+                <Text style={styles.connectText}>
+                  {isConnecting ? "Connecting..." : "Connect MetaMask"}
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.connectButton,
+                styles.walletConnectButton,
+                isConnecting && styles.disabledButton,
+              ]}
+              onPress={connectWithWalletConnect}
+              disabled={isConnecting}
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <Ionicons name="scan" size={24} color="#fff" />
+                <Text style={styles.connectText}>
+                  {isConnecting ? "Connecting..." : "WalletConnect"}
+                </Text>
+              </View>
+            </Pressable>
+
+            {/* Info */}
+            <View style={styles.infoBox}>
+              <Ionicons name="information-circle" size={20} color="#666" />
+              <Text style={styles.infoText}>
+                Your wallet will open to approve the connection
+              </Text>
+            </View>
+
+            {/* Development Bypass Button */}
+            {__DEV__ && (
+              <Pressable style={styles.devButton} onPress={bypassLogin}>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                >
+                  <Ionicons name="bug" size={20} color="#fff" />
+                  <Text style={styles.devButtonText}>DEV: Skip Login</Text>
+                </View>
+              </Pressable>
+            )}
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#f7f7f7",
+  },
   container: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f7f7f7",
-    padding: 20,
+    paddingHorizontal: 20,
   },
   header: {
     alignItems: "center",

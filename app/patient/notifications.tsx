@@ -1,9 +1,17 @@
 // app/patient/notifications.tsx
 import { Stack } from "expo-router";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import {
+  FlatList,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function NotificationsPage() {
-  // placeholder list — you’ll swap this with your real data later
+  const insets = useSafeAreaInsets();
+
+  // placeholder list — swap with your real data later
   const notifications = [
     {
       id: "1",
@@ -26,7 +34,18 @@ export default function NotificationsPage() {
   ];
 
   return (
-    <>
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          paddingLeft: insets.left + 16,
+          paddingRight: insets.right + 16,
+        },
+      ]}
+      edges={["top", "bottom"]}
+    >
       <Stack.Screen options={{ title: "Notifications" }} />
 
       <View style={styles.container}>
@@ -45,15 +64,18 @@ export default function NotificationsPage() {
           }
         />
       </View>
-    </>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+  },
   container: {
     flex: 1,
-    padding: 18,
-    backgroundColor: "#fff",
+    paddingTop: 12, // leave room before the first card
   },
   card: {
     padding: 16,

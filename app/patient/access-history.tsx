@@ -5,7 +5,7 @@ import { Stack } from "expo-router";
 
 export default function AccessHistoryScreen() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <Stack.Screen options={{ title: "Access History" }} />
       <View style={styles.container}>
         <Text style={styles.title}>Access History</Text>

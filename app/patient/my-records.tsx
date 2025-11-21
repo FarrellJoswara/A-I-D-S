@@ -92,7 +92,7 @@ export default function MyRecordsPage() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <Stack.Screen options={{ title: "My Records" }} />
 
       <FlatList

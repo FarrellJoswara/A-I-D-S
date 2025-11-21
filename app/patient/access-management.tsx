@@ -63,7 +63,7 @@ export default function PlusScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <Stack.Screen options={{ title: "Manage Records" }} />
       <View style={styles.container}>
         <Text style={styles.title}>Add New Record</Text>

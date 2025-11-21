@@ -1,19 +1,53 @@
 // app/index.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { Link, Stack } from "expo-router";
+import { Link, Stack, useLocalSearchParams } from "expo-router";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-    Pressable,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    View,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 export default function RoleChooserScreen() {
+  // safe area insets for padding on all modern devices
+  const insets = useSafeAreaInsets();
+
+  // 👇 grab walletAddress from route params (if passed from login screen)
+  const { walletAddress } = useLocalSearchParams<{ walletAddress?: string }>();
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          paddingLeft: insets.left + 16,
+          paddingRight: insets.right + 16,
+        },
+      ]}
+      edges={["top", "bottom"]}
+    >
       {/* Hide header on this first screen only */}
       <Stack.Screen options={{ headerShown: false }} />
+
+      {/* Wallet connected badge in top-right corner */}
+      {walletAddress && (
+        <View
+          style={[
+            styles.walletBadge,
+            { top: insets.top + 8, right: insets.right + 8 },
+          ]}
+        >
+          <Ionicons name="checkmark-circle" size={14} color="#fff" />
+          <Text style={styles.walletBadgeText}>Wallet Connected</Text>
+          {/* If you want to show the short address too, uncomment this: */}
+          {/* <Text style={styles.walletBadgeText}>
+            {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+          </Text> */}
+        </View>
+      )}
 
       <View style={styles.container}>
         {/* Top section */}
@@ -37,7 +71,9 @@ export default function RoleChooserScreen() {
             <Link href="/patient" asChild>
               <Pressable style={[styles.roleButton, styles.patientButton]}>
                 <View style={styles.roleLeft}>
-                  <View style={[styles.iconBubble, { backgroundColor: "#e3f2ff" }]}>
+                  <View
+                    style={[styles.iconBubble, { backgroundColor: "#e3f2ff" }]}
+                  >
                     <Ionicons name="person" size={24} color="#0b7cff" />
                   </View>
                   <View>
@@ -47,7 +83,6 @@ export default function RoleChooserScreen() {
                     </Text>
                   </View>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#555" />
               </Pressable>
             </Link>
 
@@ -55,7 +90,9 @@ export default function RoleChooserScreen() {
             <Link href="/doctor" asChild>
               <Pressable style={[styles.roleButton, styles.doctorButton]}>
                 <View style={styles.roleLeft}>
-                  <View style={[styles.iconBubble, { backgroundColor: "#ede7ff" }]}>
+                  <View
+                    style={[styles.iconBubble, { backgroundColor: "#ede7ff" }]}
+                  >
                     <Ionicons name="medical" size={24} color="#7b5cff" />
                   </View>
                   <View>
@@ -65,7 +102,6 @@ export default function RoleChooserScreen() {
                     </Text>
                   </View>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#555" />
               </Pressable>
             </Link>
           </View>
@@ -73,9 +109,7 @@ export default function RoleChooserScreen() {
 
         {/* Little footer hint */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            
-          </Text>
+          <Text style={styles.footerText}></Text>
         </View>
       </View>
     </SafeAreaView>
@@ -87,10 +121,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f5f7fb",
   },
+
+  // 🔹 Wallet badge styles
+  walletBadge: {
+    position: "absolute",
+    backgroundColor: "#22c55e",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 10,
+  },
+  walletBadgeText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 24,
   },
   headerSection: {
     alignItems: "center",
@@ -119,7 +176,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 20,
     paddingVertical: 18,
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
@@ -142,11 +199,10 @@ const styles = StyleSheet.create({
   },
   roleButton: {
     borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
   },
   patientButton: {
     backgroundColor: "#e6f7ff",

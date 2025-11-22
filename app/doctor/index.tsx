@@ -7,12 +7,13 @@ export default function DoctorMainPage() {
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen
         options={{
-          title: "Doctor",
+          title: "Doctor Portal",
+          headerShown: false,
         }}
       />
 
       <View style={styles.container}>
-        <Text style={styles.appTitle}>Doctor Dashboard</Text>
+        <Text style={styles.appTitle}>Clinician Portal</Text>
 
         <View style={styles.welcomeBanner}>
           <Text style={styles.welcomeText}>Welcome!</Text>
@@ -61,7 +62,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 24, // a little more padding so content doesn’t hit status bar
   },
   appTitle: {
     fontSize: 24,

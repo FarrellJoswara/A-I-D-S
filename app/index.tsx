@@ -42,15 +42,19 @@ export default function RoleChooserScreen() {
 
           <View style={styles.buttonGroup}>
             {/* Patient button */}
-            <Pressable 
-              style={[styles.roleButton, styles.patientButton]}
+            <Pressable
+              style={({ pressed }) => [
+                styles.roleButton,
+                styles.patientButton,
+                pressed && styles.roleButtonPressed,
+              ]}
               onPress={() => handleRoleSelect("patient")}
             >
               <View style={styles.roleLeft}>
                 <View style={[styles.iconBubble, { backgroundColor: "#e3f2ff" }]}>
                   <Ionicons name="person" size={24} color="#0b7cff" />
                 </View>
-                <View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.roleTitle}>Patient</Text>
                   <Text style={styles.roleDesc}>
                     View and manage your own records.
@@ -61,15 +65,19 @@ export default function RoleChooserScreen() {
             </Pressable>
 
             {/* Doctor button */}
-            <Pressable 
-              style={[styles.roleButton, styles.doctorButton]}
+            <Pressable
+              style={({ pressed }) => [
+                styles.roleButton,
+                styles.doctorButton,
+                pressed && styles.roleButtonPressed,
+              ]}
               onPress={() => handleRoleSelect("doctor")}
             >
               <View style={styles.roleLeft}>
                 <View style={[styles.iconBubble, { backgroundColor: "#ede7ff" }]}>
                   <Ionicons name="medical" size={24} color="#7b5cff" />
                 </View>
-                <View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.roleTitle}>Doctor</Text>
                   <Text style={styles.roleDesc}>
                     Access patients who share records with you.
@@ -81,7 +89,7 @@ export default function RoleChooserScreen() {
           </View>
         </View>
 
-        {/* Little footer hint */}
+        {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
             Powered by XRPL Blockchain
@@ -157,6 +165,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    width: "100%",
+  },
+  roleButtonPressed: {
+    opacity: 0.8,
   },
   patientButton: {
     backgroundColor: "#e6f7ff",
@@ -167,7 +179,6 @@ const styles = StyleSheet.create({
   roleLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
   },
   iconBubble: {
     width: 38,

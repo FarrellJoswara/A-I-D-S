@@ -25,49 +25,17 @@ const DEFAULT_SEEDS = {
 
 export default function XRPLLogin() {
   const router = useRouter();
-  const { wallet, setWallet, role } = useWallet();
+  const { setWallet, role } = useWallet();
   const [seed, setSeed] = useState("");
   const [loading, setLoading] = useState(false);
-  const [currentAddress, setCurrentAddress] = useState("");
 
   // Load default seed based on role
   useEffect(() => {
     if (role) {
       const defaultSeed = DEFAULT_SEEDS[role];
       setSeed(defaultSeed);
-      
-      // Auto-create wallet from default seed
-      try {
-        const wallet = Wallet.fromSeed(defaultSeed);
-        setWallet(wallet);
-        setCurrentAddress(wallet.classicAddress);
-      } catch (e) {
-        console.log("Failed to create default wallet");
-      }
     }
-  }, [role, setWallet]);
-
-  // Load last used wallet from device
-  useEffect(() => {
-    async function loadLastWallet() {
-      if (!role) return;
-      
-      try {
-        const storageKey = `lastSeed_${role}`;
-        const lastSeed = await AsyncStorage.getItem(storageKey);
-        
-        if (lastSeed) {
-          setSeed(lastSeed);
-          const wallet = Wallet.fromSeed(lastSeed);
-          setWallet(wallet);
-          setCurrentAddress(wallet.classicAddress);
-        }
-      } catch (err) {
-        console.error("Failed to load last wallet:", err);
-      }
-    }
-    loadLastWallet();
-  }, [role, setWallet]);
+  }, [role]);
 
   const isValidSeed = (s: string) => {
     try {
@@ -94,15 +62,11 @@ export default function XRPLLogin() {
       const wallet = Wallet.fromSeed(seed);
       const storageKey = `lastSeed_${role}`;
       await AsyncStorage.setItem(storageKey, seed);
-      
+
       setWallet(wallet);
-      
+
       // Route based on role
-      if (role === "patient") {
-        router.push("/patient");
-      } else {
-        router.push("/doctor");
-      }
+      router.push(role === "patient" ? "/patient" : "/doctor");
     } finally {
       setLoading(false);
     }
@@ -122,13 +86,12 @@ export default function XRPLLogin() {
 
       const newSeed = data.account.secret;
       setSeed(newSeed);
-      
+
       const storageKey = `lastSeed_${role}`;
       await AsyncStorage.setItem(storageKey, newSeed);
 
       const wallet = Wallet.fromSeed(newSeed);
       setWallet(wallet);
-      setCurrentAddress(wallet.classicAddress);
 
       Alert.alert(
         "Wallet Created!",
@@ -136,13 +99,7 @@ export default function XRPLLogin() {
         [
           {
             text: "OK",
-            onPress: () => {
-              if (role === "patient") {
-                router.push("/patient");
-              } else {
-                router.push("/doctor");
-              }
-            },
+            onPress: () => router.push(role === "patient" ? "/patient" : "/doctor"),
           },
         ]
       );
@@ -186,21 +143,6 @@ export default function XRPLLogin() {
           <Text style={styles.subHeader}>XRPL Testnet</Text>
         </View>
 
-        {currentAddress && (
-          <View style={[
-            styles.walletInfo,
-            role === "doctor" && styles.walletInfoDoctor
-          ]}>
-            <Text style={styles.walletLabel}>Current Wallet:</Text>
-            <Text style={styles.walletAddress}>
-              {currentAddress.slice(0, 8)}...{currentAddress.slice(-6)}
-            </Text>
-            <Text style={styles.walletNote}>
-              ✓ Wallet loaded and ready
-            </Text>
-          </View>
-        )}
-
         <TextInput
           placeholder="Paste Wallet Seed or use default"
           value={seed}
@@ -211,19 +153,14 @@ export default function XRPLLogin() {
         />
 
         <TouchableOpacity
-          style={[
-            styles.button,
-            role === "doctor" && styles.doctorButton
-          ]}
+          style={[styles.button, role === "doctor" && styles.doctorButton]}
           onPress={login}
           disabled={loading || !seed}
         >
           {loading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.buttonText}>
-              {currentAddress ? "Continue to App" : "Login"}
-            </Text>
+            <Text style={styles.buttonText}>Login</Text>
           )}
         </TouchableOpacity>
 
@@ -286,36 +223,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     marginTop: 4,
-  },
-  walletInfo: {
-    backgroundColor: "#e8f5e9",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#4CAF50",
-  },
-  walletInfoDoctor: {
-    backgroundColor: "#f3e5f5",
-    borderColor: "#7b5cff",
-  },
-  walletLabel: {
-    fontSize: 12,
-    color: "#2e7d32",
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  walletAddress: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1b5e20",
-    marginBottom: 4,
-  },
-  walletNote: {
-    fontSize: 12,
-    color: "#4CAF50",
-    fontWeight: "600",
   },
   input: {
     width: "100%",

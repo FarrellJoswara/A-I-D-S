@@ -62,7 +62,7 @@ export default function PatientMainPage() {
                 <View style={styles.iconBubble}>
                   <Ionicons name="time" size={24} color="#10b981" />
                 </View>
-                <Text style={styles.cardText}>Access History</Text>
+                <Text style={styles.cardText}>Access History [WIP]</Text>
               </View>
               <Ionicons name="chevron-forward" size={22} color="#555" />
             </Pressable>
@@ -88,7 +88,7 @@ export default function PatientMainPage() {
                 <View style={styles.iconBubble}>
                   <Ionicons name="notifications-outline" size={24} color="#f59e0b" />
                 </View>
-                <Text style={styles.cardText}>Notifications</Text>
+                <Text style={styles.cardText}>Notifications [WIP]</Text>
               </View>
               <Ionicons name="chevron-forward" size={22} color="#555" />
             </Pressable>

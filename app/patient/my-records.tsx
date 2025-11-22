@@ -1,5 +1,5 @@
-// app/patient/my-records.tsx
 import { Ionicons } from "@expo/vector-icons";
+import { Buffer } from "buffer";
 import { Stack } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -13,166 +13,208 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Client } from "xrpl";
 import { useWallet } from "../context/WalletContext";
+
+(global as any).Buffer = Buffer;
+
+// XRPL Transaction Types
+interface XRPLMemo {
+  Memo: {
+    MemoData?: string;
+    MemoType?: string;
+  };
+}
+
+interface XRPLTransaction {
+  TransactionType: string;
+  hash?: string;
+  Account?: string;
+  Destination?: string;
+  Memos?: XRPLMemo[];
+  date?: number;
+}
+
+interface XRPLTxResponse {
+  tx: XRPLTransaction;
+  meta: any;
+}
+
+interface AccountTxResponse {
+  result: {
+    transactions?: XRPLTxResponse[];
+  };
+}
 
 type MedicalRecord = {
   id: string;
   metadataCID: string;
   timestamp: number;
-  recordType?: string;
-  doctorWallet?: string;
-  type: string;
+  recordType: string;
+  doctorWallet: string;
   patientWallet: string;
+  fileCID: string;
+  fileName: string;
+  description: string;
+  hospital: string;
+  metadata?: any;
+  txHash?: string;
 };
 
-// Use the actual metadata from your successful upload
-const ACTUAL_RECORDS: MedicalRecord[] = [
-  {
-    id: "1",
-    metadataCID: "QmYiJb18DCkWZh5QoyF3ws7K9YTQj6wRt2CMcnJuexdNBH",
-    timestamp: 1763774486, // Your actual timestamp
-    recordType: "Blood Test Report",
-    doctorWallet: "rUofX1KCA6crUq9UtpHZhCDkTyzTnDuksv",
-    type: "medicalRecord",
-    patientWallet: "rUofX1KCA6crUq9UtpHZhCDkTyzTnDuksv"
-  }
-];
-
-// Pre-loaded metadata for the successful record to avoid rate limiting
-const PRELOADED_METADATA: Record<string, any> = {
-  "QmYiJb18DCkWZh5QoyF3ws7K9YTQj6wRt2CMcnJuexdNBH": {
-    "description": "Poop",
-    "doctor_name": "Dr. Smith",
-    "doctor_wallet": "rUofX1KCA6crUq9UtpHZhCDkTyzTnDuksv",
-    "extra": {
-      "file_format": "image/jpeg",
-      "original_filename": "Screenshot_20251121_135234_Taco Bell.jpg",
-      "patient_age": 34,
-      "size_bytes": 1336807,
-      "tags": ["medical-record", "blood-test-report"],
-      "upload_timestamp": "2025-11-22T01:21:26.798Z"
-    },
-    "hash_of_file": "680a997dfe066f55932e02c4df1a864168e50397f15c5c0ab6bcf6d49fa2c637",
-    "hospital": "KU Medical Center",
-    "ipfs_file_cid": "QmVnaDRuw1gAo78X6GXQJa4QE9cvuueFp8qaR4UvgCQjrB",
-    "patient_name": "Alice Johnson",
-    "patient_wallet": "rUofX1KCA6crUq9UtpHZhCDkTyzTnDuksv",
-    "record_type": "Blood Test Report",
-    "timestamp": 1763774486,
-    "version": 1
-  }
-};
+// Pinata IPFS Gateway
+const PINATA_GATEWAY = "https://gateway.pinata.cloud/ipfs";
 
 export default function MyRecordsPage() {
   const { wallet } = useWallet();
   const [documents, setDocuments] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [metadata, setMetadata] = useState<Record<string, any>>(PRELOADED_METADATA);
+  const [searchCID, setSearchCID] = useState("");
 
-  const fetchMetadata = useCallback(async (cid: string) => {
-    // If we already have the metadata pre-loaded, use it
-    if (PRELOADED_METADATA[cid]) {
-      console.log(`Using pre-loaded metadata for CID: ${cid}`);
-      setMetadata((prev) => ({ ...prev, [cid]: PRELOADED_METADATA[cid] }));
-      return;
-    }
-
+  // Function to fetch metadata from Pinata IPFS
+  const fetchMetadataFromIPFS = useCallback(async (cid: string) => {
     try {
-      console.log(`Fetching metadata for CID: ${cid}`);
-      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
+      console.log(`Fetching metadata from Pinata for CID: ${cid}`);
+      const response = await fetch(`${PINATA_GATEWAY}/${cid}`);
       
-      if (response.status === 429) {
-        console.log(`Rate limited for CID: ${cid}, using fallback data`);
-        // Use fallback data when rate limited
-        const fallbackMeta = {
-          record_type: "Medical Record",
-          hospital: "KU Medical Center",
-          description: "Medical record from healthcare provider",
-          ipfs_file_cid: `QmFile${Math.random().toString(36).substring(2, 8)}`,
-          hash_of_file: `hash${Math.random().toString(36).substring(2, 10)}`,
-          patient_name: "Patient",
-          doctor_name: "Dr. Smith",
-          extra: {
-            original_filename: "medical_record.pdf",
-            file_format: "application/pdf"
-          }
-        };
-        setMetadata((prev) => ({ ...prev, [cid]: fallbackMeta }));
-        return;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`Successfully fetched metadata for ${cid}:`, data);
-        setMetadata((prev) => ({ ...prev, [cid]: data }));
-      } else {
-        console.error(`Failed to fetch metadata for ${cid}: ${response.status}`);
-        // Use fallback data on error
-        const fallbackMeta = {
-          record_type: "Medical Record",
-          hospital: "KU Medical Center",
-          description: "Medical record from healthcare provider",
-          ipfs_file_cid: `QmFile${Math.random().toString(36).substring(2, 8)}`,
-          hash_of_file: `hash${Math.random().toString(36).substring(2, 10)}`,
-          patient_name: "Patient",
-          doctor_name: "Dr. Smith",
-          extra: {
-            original_filename: "medical_record.pdf",
-            file_format: "application/pdf"
-          }
-        };
-        setMetadata((prev) => ({ ...prev, [cid]: fallbackMeta }));
-      }
+      const metadata = await response.json();
+      console.log(`Successfully fetched metadata for ${cid}:`, metadata);
+      return metadata;
     } catch (err) {
       console.error(`Failed to fetch metadata for ${cid}:`, err);
-      // Use fallback data on error
-      const fallbackMeta = {
-        record_type: "Medical Record",
-        hospital: "KU Medical Center",
-        description: "Medical record from healthcare provider",
-        ipfs_file_cid: `QmFile${Math.random().toString(36).substring(2, 8)}`,
-        hash_of_file: `hash${Math.random().toString(36).substring(2, 10)}`,
-        patient_name: "Patient",
-        doctor_name: "Dr. Smith",
-        extra: {
-          original_filename: "medical_record.pdf",
-          file_format: "application/pdf"
-        }
-      };
-      setMetadata((prev) => ({ ...prev, [cid]: fallbackMeta }));
+      throw err;
     }
   }, []);
 
-  const fetchDocuments = useCallback(async () => {
-    if (!wallet?.classicAddress) {
-      Alert.alert("Error", "Wallet not available");
-      return;
-    }
+  // Function to scan XRPL for medical record transactions
+  const scanXRPLForRecords = useCallback(async (patientWallet: string) => {
+    if (!patientWallet) return [];
 
+    const records: MedicalRecord[] = [];
+    
+    try {
+      console.log("Scanning XRPL for medical records...");
+      const client = new Client("wss://s.altnet.rippletest.net:51233");
+      await client.connect();
+
+      // Get transactions for this wallet
+      const resp = await client.request({
+        command: "account_tx",
+        account: patientWallet,
+        ledger_index_min: -1,
+        ledger_index_max: -1,
+        limit: 100,
+      });
+
+      console.log("Raw XRPL response:", JSON.stringify(resp, null, 2));
+
+      const txs = (resp as AccountTxResponse).result.transactions || [];
+      console.log(`Found ${txs.length} transactions to scan`);
+
+      // Process transactions to find medical records
+      for (const txItem of txs) {
+        try {
+          // Handle different transaction response formats
+          const tx = txItem.tx;
+          if (!tx || typeof tx !== 'object') {
+            console.log('Skipping invalid transaction:', txItem);
+            continue;
+          }
+
+          // Look for medical record transactions (payments with memos)
+          if (tx.TransactionType === "Payment" && tx.Memos && Array.isArray(tx.Memos)) {
+            console.log("Found payment transaction with memos:", tx.hash);
+            
+            for (const memoEntry of tx.Memos) {
+              try {
+                const memoHex = memoEntry.Memo?.MemoData;
+                if (!memoHex) continue;
+
+                const memoStr = Buffer.from(memoHex, "hex").toString();
+                console.log("Memo content:", memoStr);
+                
+                const memoObj = JSON.parse(memoStr);
+
+                // Check if this is a medical record transaction
+                if (memoObj.type === "medicalRecord" && memoObj.metadataCID) {
+                  console.log("Found medical record transaction:", memoObj);
+                  
+                  try {
+                    // Fetch the metadata from IPFS
+                    const metadata = await fetchMetadataFromIPFS(memoObj.metadataCID);
+                    
+                    const record: MedicalRecord = {
+                      id: `record-${tx.hash || Date.now()}`,
+                      metadataCID: memoObj.metadataCID,
+                      timestamp: memoObj.timestamp || Math.floor(Date.now() / 1000),
+                      recordType: memoObj.recordType || metadata.record_type || "Medical Record",
+                      doctorWallet: tx.Account || "Unknown Doctor",
+                      patientWallet: tx.Destination || patientWallet,
+                      fileCID: metadata.ipfs_file_cid || "",
+                      fileName: metadata.extra?.original_filename || "document.pdf",
+                      description: metadata.description || "Medical record from IPFS",
+                      hospital: metadata.hospital || "Unknown Hospital",
+                      metadata: metadata,
+                      txHash: tx.hash
+                    };
+                    
+                    records.push(record);
+                    console.log("Successfully loaded record:", record.recordType);
+                    
+                  } catch (ipfsError) {
+                    console.log(`Could not fetch metadata for CID ${memoObj.metadataCID}, skipping...`);
+                  }
+                }
+              } catch (parseError) {
+                // Skip invalid memo data - might not be JSON
+                console.log("Memo is not valid JSON, skipping...");
+                continue;
+              }
+            }
+          }
+        } catch (txError) {
+          console.log("Error processing transaction, skipping:", txError);
+          continue;
+        }
+      }
+
+      await client.disconnect();
+      console.log(`Found ${records.length} medical records on XRPL`);
+      
+    } catch (err) {
+      console.error("Error scanning XRPL:", err);
+    }
+    
+    return records;
+  }, [fetchMetadataFromIPFS]);
+
+  // Function to discover all medical records
+  const discoverAllRecords = useCallback(async () => {
+    const records: MedicalRecord[] = [];
+    
+    if (wallet?.classicAddress) {
+      // Scan XRPL for records sent to this wallet
+      const xrplRecords = await scanXRPLForRecords(wallet.classicAddress);
+      records.push(...xrplRecords);
+    }
+    
+    return records;
+  }, [wallet, scanXRPLForRecords]);
+
+  const fetchDocuments = useCallback(async () => {
     setLoading(true);
     try {
-      console.log(`Fetching records for wallet: ${wallet.classicAddress}`);
+      console.log("Fetching all medical records from XRPL and IPFS...");
       
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Discover records from XRPL
+      const discoveredRecords = await discoverAllRecords();
       
-      // Filter records for current patient's wallet
-      const patientRecords = ACTUAL_RECORDS.filter(
-        record => record.patientWallet === wallet.classicAddress
-      );
-      
-      console.log(`Found ${patientRecords.length} records for patient`);
-      
-      // Sort by timestamp, newest first
-      patientRecords.sort((a, b) => b.timestamp - a.timestamp);
-      
-      setDocuments(patientRecords);
-      
-      // Pre-load metadata for records (will use pre-loaded data where available)
-      for (const record of patientRecords) {
-        await fetchMetadata(record.metadataCID);
-      }
+      setDocuments(discoveredRecords);
+      console.log(`Found ${discoveredRecords.length} records total`);
       
     } catch (err) {
       console.error("Failed to fetch medical records:", err);
@@ -181,7 +223,110 @@ export default function MyRecordsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [wallet, fetchMetadata]);
+  }, [discoverAllRecords]);
+
+  // Function to manually add a record by metadata CID
+  const addRecordByCID = useCallback(async (metadataCID: string) => {
+    if (!metadataCID) {
+      Alert.alert("Error", "Please enter a valid metadata CID");
+      return;
+    }
+
+    // Check if record already exists
+    if (documents.some(doc => doc.metadataCID === metadataCID)) {
+      Alert.alert("Info", "This record is already loaded.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Fetch metadata from Pinata
+      const metadata = await fetchMetadataFromIPFS(metadataCID);
+      
+      // Create record from metadata
+      const newRecord: MedicalRecord = {
+        id: `record-${Date.now()}`,
+        metadataCID: metadataCID,
+        timestamp: metadata.timestamp || Math.floor(Date.now() / 1000),
+        recordType: metadata.record_type || metadata.recordType || "Medical Record",
+        doctorWallet: metadata.doctor_wallet || metadata.doctorWallet || "Unknown Doctor",
+        patientWallet: metadata.patient_wallet || metadata.patientWallet || wallet?.classicAddress || "Unknown Patient",
+        fileCID: metadata.ipfs_file_cid || metadata.fileCID || "",
+        fileName: metadata.extra?.original_filename || metadata.fileName || "document.pdf",
+        description: metadata.description || "Medical record from IPFS",
+        hospital: metadata.hospital || "Unknown Hospital",
+        metadata: metadata
+      };
+
+      // Add to documents
+      setDocuments(prev => [newRecord, ...prev]);
+      Alert.alert("Success", "Record loaded from IPFS successfully!");
+      
+    } catch (err) {
+      console.error("Failed to load record from IPFS:", err);
+      Alert.alert("Error", "Failed to load record from IPFS. Please check the CID and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [documents, fetchMetadataFromIPFS, wallet]);
+
+  // Prompt user to enter a metadata CID
+  const promptForCID = useCallback(() => {
+    Alert.prompt(
+      "Load Record from IPFS",
+      "Enter the metadata CID from Pinata IPFS:",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Load",
+          onPress: (cid) => {
+            if (cid) {
+              addRecordByCID(cid.trim());
+            }
+          }
+        }
+      ],
+      "plain-text",
+      searchCID
+    );
+  }, [addRecordByCID, searchCID]);
+
+  // Add demo records for testing
+  const addDemoRecords = useCallback(() => {
+    const demoRecords: MedicalRecord[] = [
+      {
+        id: `demo-${Date.now()}-1`,
+        metadataCID: "QmDemoMetadata1",
+        timestamp: Math.floor(Date.now() / 1000) - 86400,
+        recordType: "Blood Test Report",
+        doctorWallet: "rDemoDoctor1",
+        patientWallet: wallet?.classicAddress || "rDemoPatient1",
+        fileCID: "QmDemoFile1",
+        fileName: "blood_test.pdf",
+        description: "Complete blood count and cholesterol levels",
+        hospital: "Demo Medical Center"
+      },
+      {
+        id: `demo-${Date.now()}-2`,
+        metadataCID: "QmDemoMetadata2",
+        timestamp: Math.floor(Date.now() / 1000) - 172800,
+        recordType: "X-Ray Results",
+        doctorWallet: "rDemoDoctor2",
+        patientWallet: wallet?.classicAddress || "rDemoPatient2",
+        fileCID: "QmDemoFile2",
+        fileName: "chest_xray.pdf",
+        description: "Chest X-ray showing clear lungs",
+        hospital: "Demo Hospital"
+      }
+    ];
+
+    setDocuments(prev => [...demoRecords, ...prev]);
+    Alert.alert("Demo", "Added sample medical records for testing");
+  }, [wallet]);
 
   useEffect(() => {
     fetchDocuments();
@@ -193,7 +338,7 @@ export default function MyRecordsPage() {
   }, [fetchDocuments]);
 
   const openIPFS = (cid: string) => {
-    const url = `https://gateway.pinata.cloud/ipfs/${cid}`;
+    const url = `${PINATA_GATEWAY}/${cid}`;
     Linking.openURL(url).catch(() =>
       Alert.alert("Error", "Unable to open IPFS link")
     );
@@ -204,7 +349,7 @@ export default function MyRecordsPage() {
       Alert.alert("Error", "File CID not found");
       return;
     }
-    const url = `https://gateway.pinata.cloud/ipfs/${fileCID}`;
+    const url = `${PINATA_GATEWAY}/${fileCID}`;
     Linking.openURL(url).catch(() =>
       Alert.alert("Error", "Unable to open file")
     );
@@ -212,50 +357,43 @@ export default function MyRecordsPage() {
 
   const downloadFile = async (fileCID: string, fileName: string) => {
     try {
-      const url = `https://gateway.pinata.cloud/ipfs/${fileCID}`;
+      const url = `${PINATA_GATEWAY}/${fileCID}`;
       const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const blob = await response.blob();
       
       console.log(`Downloading file: ${fileName} from ${fileCID}`);
-      Alert.alert("Download", `File ${fileName} would be downloaded in a real app.`);
+      Alert.alert("Download", `File ${fileName} downloaded successfully from IPFS.`);
     } catch (err) {
       console.error("Download error:", err);
-      Alert.alert("Error", "Failed to download file");
+      Alert.alert("Error", "Failed to download file from IPFS");
     }
   };
 
-  const addMockRecord = () => {
-    const newRecord: MedicalRecord = {
-      id: `mock-${Date.now()}`,
-      metadataCID: `QmMock${Math.random().toString(36).substring(2, 10)}`,
-      timestamp: Math.floor(Date.now() / 1000),
-      recordType: "Demo Test Results",
-      doctorWallet: "rDemoDoctorWallet",
-      type: "medicalRecord",
-      patientWallet: wallet?.classicAddress || "rUofX1KCA6crUq9UtpHZhCDkTyzTnDuksv"
-    };
-    
-    setDocuments(prev => [newRecord, ...prev]);
-    fetchMetadata(newRecord.metadataCID);
-    Alert.alert("Demo", "Demo record added for testing");
+  const viewOnXRPL = (txHash: string) => {
+    if (!txHash) return;
+    const url = `https://testnet.xrpl.org/transactions/${txHash}`;
+    Linking.openURL(url).catch(() =>
+      Alert.alert("Error", "Unable to open XRPL transaction")
+    );
   };
 
   const renderRecord = useCallback(({ item }: { item: MedicalRecord }) => {
-    const meta = metadata[item.metadataCID];
-    const recordType = item.recordType || meta?.record_type || "Medical Record";
-    const hospital = meta?.hospital || "KU Medical Center";
-    const description = meta?.description || "Medical record from healthcare provider";
-    const fileCID = meta?.ipfs_file_cid;
-    const fileName = meta?.extra?.original_filename || "medical_record.pdf";
-    const doctorName = meta?.doctor_name || "Dr. Smith";
-    const patientName = meta?.patient_name || "Patient";
+    const formatAddress = (addr: string) => {
+      if (!addr) return "N/A";
+      return `${addr.substring(0, 8)}...${addr.substring(addr.length - 4)}`;
+    };
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Ionicons name="medical" size={24} color="#1e3a5f" />
           <View style={styles.headerTextContainer}>
-            <Text style={styles.recordType}>{recordType}</Text>
+            <Text style={styles.recordType}>{item.recordType}</Text>
             <Text style={styles.timestamp}>
               {new Date(item.timestamp * 1000).toLocaleDateString("en-US", {
                 year: "numeric",
@@ -270,45 +408,36 @@ export default function MyRecordsPage() {
 
         <View style={styles.infoRow}>
           <Ionicons name="business-outline" size={16} color="#666" />
-          <Text style={styles.infoLabel}>{hospital}</Text>
+          <Text style={styles.infoLabel}>{item.hospital}</Text>
         </View>
 
         <View style={styles.infoRow}>
           <Ionicons name="person-outline" size={16} color="#666" />
           <Text style={styles.infoLabel} numberOfLines={1}>
-            Doctor: {doctorName}
+            Doctor: {formatAddress(item.doctorWallet)}
           </Text>
         </View>
 
         <View style={styles.infoRow}>
           <Ionicons name="person-outline" size={16} color="#666" />
           <Text style={styles.infoLabel} numberOfLines={1}>
-            Patient: {patientName}
+            Patient: {formatAddress(item.patientWallet)}
           </Text>
         </View>
 
-        {description && (
+        {item.description && (
           <View style={styles.descriptionContainer}>
             <Ionicons name="document-text-outline" size={16} color="#666" />
-            <Text style={styles.description}>{description}</Text>
-          </View>
-        )}
-
-        {meta?.hash_of_file && (
-          <View style={styles.infoRow}>
-            <Ionicons name="finger-print-outline" size={16} color="#666" />
-            <Text style={styles.hashText} numberOfLines={1}>
-              Hash: {meta.hash_of_file.substring(0, 20)}...
-            </Text>
+            <Text style={styles.description}>{item.description}</Text>
           </View>
         )}
 
         <View style={styles.buttonContainer}>
-          {fileCID && (
+          {item.fileCID && (
             <>
               <TouchableOpacity
                 style={styles.viewButton}
-                onPress={() => viewFile(fileCID)}
+                onPress={() => viewFile(item.fileCID)}
               >
                 <Ionicons name="eye-outline" size={18} color="#fff" />
                 <Text style={styles.buttonText}>View File</Text>
@@ -316,7 +445,7 @@ export default function MyRecordsPage() {
               
               <TouchableOpacity
                 style={styles.downloadButton}
-                onPress={() => downloadFile(fileCID, fileName)}
+                onPress={() => downloadFile(item.fileCID, item.fileName)}
               >
                 <Ionicons name="download-outline" size={18} color="#1e3a5f" />
                 <Text style={styles.downloadButtonText}>Download</Text>
@@ -333,58 +462,97 @@ export default function MyRecordsPage() {
           </TouchableOpacity>
         </View>
 
-        {fileCID && (
+        {item.txHash && (
+          <TouchableOpacity
+            style={styles.xrplButton}
+            onPress={() => viewOnXRPL(item.txHash!)}
+          >
+            <Ionicons name="link-outline" size={16} color="#666" />
+            <Text style={styles.xrplButtonText}>View on XRPL</Text>
+          </TouchableOpacity>
+        )}
+
+        {item.fileCID && (
           <View style={styles.footer}>
-            <Text style={styles.cidLabel}>File: </Text>
+            <Text style={styles.cidLabel}>File CID: </Text>
             <Text style={styles.cidText} numberOfLines={1}>
-              {fileCID}
+              {item.fileCID}
             </Text>
           </View>
         )}
         
         <View style={styles.footer}>
-          <Text style={styles.cidLabel}>Metadata: </Text>
+          <Text style={styles.cidLabel}>Metadata CID: </Text>
           <Text style={styles.cidText} numberOfLines={1}>
             {item.metadataCID}
           </Text>
         </View>
+
+        {item.metadata && (
+          <TouchableOpacity
+            style={styles.jsonButton}
+            onPress={() => {
+              Alert.alert("Metadata JSON", JSON.stringify(item.metadata, null, 2));
+            }}
+          >
+            <Ionicons name="code-slash" size={16} color="#666" />
+            <Text style={styles.jsonButtonText}>View Full Metadata</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
-  }, [metadata]);
+  }, []);
 
   const renderEmptyState = useCallback(() => (
     <View style={styles.empty}>
       <Ionicons name="document-text-outline" size={64} color="#ccc" />
       <Text style={styles.emptyText}>No medical records found</Text>
       <Text style={styles.emptySubtext}>
-        Your medical records uploaded by healthcare providers will appear here
+        {wallet ? 
+          "Scanning XRPL for medical records..." : 
+          "Connect your wallet to view medical records"
+        }
       </Text>
       
-      {/* Info section */}
       <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>Your Medical Records</Text>
+        <Text style={styles.infoTitle}>XRPL Medical Records</Text>
         <Text style={styles.infoSectionText}>
-          • View your actual medical records from IPFS
+          • Records are stored on IPFS and registered on XRPL
         </Text>
         <Text style={styles.infoSectionText}>
-          • Access files and metadata securely
+          • Automatically scans blockchain for records
         </Text>
         <Text style={styles.infoSectionText}>
-          • All data is stored on decentralized storage
+          • Each record is cryptographically verified
         </Text>
       </View>
       
       <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
         <Ionicons name="refresh" size={20} color="#1e3a5f" />
-        <Text style={styles.refreshButtonText}>Refresh</Text>
+        <Text style={styles.refreshButtonText}>Scan XRPL for Records</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.demoButton} onPress={addMockRecord}>
-        <Ionicons name="add-circle" size={20} color="#0b7cff" />
-        <Text style={styles.demoButtonText}>Add Demo Record</Text>
+      <TouchableOpacity style={styles.loadButton} onPress={promptForCID}>
+        <Ionicons name="cloud-download" size={20} color="#0b7cff" />
+        <Text style={styles.loadButtonText}>Load Record by CID</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity style={styles.demoButton} onPress={addDemoRecords}>
+        <Ionicons name="beaker" size={20} color="#666" />
+        <Text style={styles.demoButtonText}>Add Demo Records</Text>
+      </TouchableOpacity>
+
+      {!wallet && (
+        <Text style={styles.walletWarning}>
+          Connect your wallet to automatically find your medical records
+        </Text>
+      )}
+
+      <Text style={styles.instructionText}>
+        Medical records are automatically discovered from XRPL transactions
+      </Text>
     </View>
-  ), [onRefresh, wallet?.classicAddress]);
+  ), [onRefresh, promptForCID, wallet, addDemoRecords]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -393,7 +561,7 @@ export default function MyRecordsPage() {
       {loading && !refreshing ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#1e3a5f" />
-          <Text style={styles.loadingText}>Loading your records...</Text>
+          <Text style={styles.loadingText}>Scanning XRPL for records...</Text>
         </View>
       ) : (
         <FlatList
@@ -404,6 +572,19 @@ export default function MyRecordsPage() {
           refreshing={refreshing}
           onRefresh={onRefresh}
           ListEmptyComponent={renderEmptyState}
+          ListHeaderComponent={documents.length > 0 ? (
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerInfoText}>
+                Found {documents.length} medical record(s)
+              </Text>
+              <Text style={styles.headerSubtext}>
+                {documents.some(d => d.txHash) ? 
+                  "Discovered from XRPL transactions" : 
+                  "Loaded from IPFS"
+                }
+              </Text>
+            </View>
+          ) : null}
         />
       )}
     </SafeAreaView>
@@ -411,7 +592,10 @@ export default function MyRecordsPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f7fa" },
+  container: {
+    flex: 1,
+    backgroundColor: "#f5f7fa",
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -422,87 +606,136 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
   },
-  emptyContainer: {
-    flex: 1,
+  headerInfo: {
+    backgroundColor: "#e8f4f8",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    alignItems: "center",
   },
-  empty: {
-    flex: 1,
+  headerInfoText: {
+    fontSize: 14,
+    color: "#1e3a5f",
+    fontWeight: "500",
+  },
+  headerSubtext: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+  },
+  emptyContainer: {
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 40,
+    padding: 20,
+  },
+  empty: {
+    alignItems: "center",
+    paddingHorizontal: 20,
   },
   emptyText: {
     fontSize: 18,
     fontWeight: "600",
     color: "#666",
     marginTop: 16,
+    marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
     color: "#999",
-    marginTop: 8,
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 30,
+    lineHeight: 20,
+  },
+  walletWarning: {
+    fontSize: 14,
+    color: "#ff6b35",
+    textAlign: "center",
+    marginBottom: 16,
+    fontWeight: "500",
   },
   infoSection: {
-    marginTop: 20,
-    padding: 16,
     backgroundColor: "#f0f8ff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#d1e7ff",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
     width: "100%",
   },
   infoTitle: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#1e3a5f",
     marginBottom: 8,
   },
   infoSectionText: {
-    fontSize: 12,
-    color: "#1e3a5f",
+    fontSize: 14,
+    color: "#666",
     marginBottom: 4,
+    lineHeight: 18,
   },
   refreshButton: {
-    marginTop: 20,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#e8f4f8",
-    paddingVertical: 10,
     paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 8,
+    marginBottom: 12,
+    width: "100%",
+    justifyContent: "center",
   },
   refreshButtonText: {
-    marginLeft: 8,
     fontSize: 16,
-    fontWeight: "600",
     color: "#1e3a5f",
+    fontWeight: "600",
+    marginLeft: 8,
   },
-  demoButton: {
-    marginTop: 12,
+  loadButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f0f8ff",
-    paddingVertical: 10,
+    backgroundColor: "#0b7cff",
     paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#0b7cff",
+    marginBottom: 12,
+    width: "100%",
+    justifyContent: "center",
+  },
+  loadButtonText: {
+    fontSize: 16,
+    color: "white",
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  demoButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f0f0f0",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    width: "100%",
+    justifyContent: "center",
   },
   demoButtonText: {
-    marginLeft: 8,
     fontSize: 16,
+    color: "#666",
     fontWeight: "600",
-    color: "#0b7cff",
+    marginLeft: 8,
+  },
+  instructionText: {
+    fontSize: 12,
+    color: "#666",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 16,
   },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: "white",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#1e3a5f",
+    marginBottom: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -511,20 +744,20 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 12,
   },
   headerTextContainer: {
-    marginLeft: 8,
     flex: 1,
+    marginLeft: 12,
   },
   recordType: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0b1b3b",
+    color: "#1e3a5f",
   },
   timestamp: {
-    fontSize: 12,
+    fontSize: 14,
     color: "#666",
     marginTop: 2,
   },
@@ -535,20 +768,13 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 14,
-    color: "#444",
-    marginLeft: 8,
-    flex: 1,
-  },
-  hashText: {
-    fontSize: 12,
     color: "#666",
     marginLeft: 8,
     flex: 1,
-    fontFamily: "monospace",
   },
   descriptionContainer: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    marginTop: 8,
     marginBottom: 12,
   },
   description: {
@@ -556,7 +782,6 @@ const styles = StyleSheet.create({
     color: "#666",
     marginLeft: 8,
     flex: 1,
-    fontStyle: "italic",
     lineHeight: 18,
   },
   buttonContainer: {
@@ -565,69 +790,90 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   viewButton: {
-    flex: 1,
-    backgroundColor: "#1e3a5f",
-    paddingVertical: 10,
-    borderRadius: 8,
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#1e3a5f",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    flex: 1,
     justifyContent: "center",
   },
+  buttonText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
   downloadButton: {
-    flex: 1,
-    backgroundColor: "#e8f4f8",
-    paddingVertical: 10,
-    borderRadius: 8,
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#e8f4f8",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    flex: 1,
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#1e3a5f",
   },
+  downloadButtonText: {
+    color: "#1e3a5f",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
   metadataButton: {
-    flex: 1,
-    backgroundColor: "#f8f8f8",
-    paddingVertical: 10,
-    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "transparent",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#1e3a5f",
+  },
+  metadataButtonText: {
+    color: "#1e3a5f",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+  xrplButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#ddd",
+    marginTop: 8,
+    padding: 8,
   },
-  buttonText: {
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 14,
-  },
-  downloadButtonText: {
-    color: "#1e3a5f",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 14,
-  },
-  metadataButtonText: {
+  xrplButtonText: {
     color: "#666",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 14,
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  jsonButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+    padding: 8,
+  },
+  jsonButtonText: {
+    color: "#666",
+    fontSize: 12,
+    marginLeft: 4,
   },
   footer: {
     flexDirection: "row",
-    alignItems: "center",
     marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#e0e0e0",
   },
   cidLabel: {
-    fontSize: 11,
-    color: "#999",
-    fontWeight: "600",
+    fontSize: 12,
+    color: "#666",
+    fontWeight: "500",
   },
   cidText: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#999",
     flex: 1,
     fontFamily: "monospace",

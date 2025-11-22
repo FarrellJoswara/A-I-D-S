@@ -22,8 +22,10 @@ import { Client, Payment, Wallet, xrpToDrops } from "xrpl";
 
 import { uploadFileToPinata, uploadRecordMetadata } from "../../../../utils/pinata";
 
-// Hardcoded patient data
-const PATIENT_ADDRESS = "rUofX1KCA6crUq9UtpHZhCDkTyzTnDuksv";
+// Updated wallet addresses - USE DIFFERENT WALLETS
+const PATIENT_ADDRESS = "rUofX1KCA6crUq9UtpHZhCDkTyzTnDuksv"; // Patient wallet
+// Use a different doctor wallet seed that generates a different address
+const DOCTOR_SEED = "sEd7wWfHKjvK1Vv8P9hqJ4cKbR7aM3tN"; // Different doctor wallet seed
 const PATIENT_NAME = "Alice Johnson";
 const PATIENT_AGE = 34;
 const PATIENT_LAST_VISIT = "2024-01-15";
@@ -37,7 +39,7 @@ export default function AddRecord() {
   const [hospital, setHospital] = useState("KU Medical Center");
   const [description, setDescription] = useState("");
 
-  const doctorWallet = Wallet.fromSeed("sEdSkAhvagdUJQoZmQPdKckGJAf61ig");
+  const doctorWallet = Wallet.fromSeed(DOCTOR_SEED);
 
   const formatAddress = (addr: string) => {
     if (!addr || addr.length <= 12) return addr || "N/A";
@@ -132,90 +134,180 @@ export default function AddRecord() {
       const metadataCID = metadataRes.IpfsHash;
       console.log("Metadata CID:", metadataCID);
 
-      console.log("Submitting to XRPL...");
-      const client = new Client("wss://s.altnet.rippletest.net:51233");
-      await client.connect();
-
-      // Generate unique identifiers to prevent redundant transactions
-      const uniqueId = Math.random().toString(36).substring(2, 15);
-      const timestamp = Math.floor(Date.now() / 1000);
+      // IPFS upload successful - now try XRPL but don't fail the whole process if it fails
+      let xrplSuccess = false;
+      let txHash = "";
+      let xrplError = "";
       
-      const payment: Payment = {
-        TransactionType: "Payment",
-        Account: doctorWallet.classicAddress,
-        Destination: PATIENT_ADDRESS,
-        Amount: xrpToDrops("0.001"),
-        Memos: [
-          {
-            Memo: {
-              MemoType: Buffer.from("medicalRecord").toString("hex"), // Add MemoType for uniqueness
-              MemoData: Buffer.from(
-                JSON.stringify({
-                  type: "medicalRecord",
-                  metadataCID,
-                  recordType: recordType.trim(),
-                  timestamp: timestamp,
-                  doctor: doctorWallet.classicAddress,
-                  fileHash: fileHash.substring(0, 16), // Include part of file hash
-                  uniqueId: uniqueId, // Add unique identifier
-                })
-              ).toString("hex"),
+      try {
+        console.log("Attempting to submit to XRPL...");
+        console.log("Doctor wallet address:", doctorWallet.classicAddress);
+        console.log("Patient wallet address:", PATIENT_ADDRESS);
+        
+        // Check if doctor and patient addresses are different
+        if (doctorWallet.classicAddress === PATIENT_ADDRESS) {
+          throw new Error("Doctor and patient wallets cannot be the same address");
+        }
+        
+        const client = new Client("wss://s.altnet.rippletest.net:51233");
+        
+        console.log("Connecting to XRPL testnet...");
+        await client.connect();
+        console.log("Connected to XRPL testnet");
+
+        // Generate unique identifiers to prevent redundant transactions
+        const uniqueId = Math.random().toString(36).substring(2, 15);
+        const timestamp = Math.floor(Date.now() / 1000);
+        const nanoTimestamp = Date.now(); // More precise timestamp
+        
+        // Create completely unique memo data
+        const memoData = {
+          type: "medicalRecord",
+          metadataCID,
+          recordType: recordType.trim(),
+          timestamp: timestamp,
+          nanoTimestamp: nanoTimestamp,
+          doctor: doctorWallet.classicAddress,
+          fileHash: fileHash.substring(0, 16),
+          uniqueId: uniqueId,
+          fileSize: file.size || 0,
+          fileName: file.name,
+          hospital: hospital.trim(),
+          randomSalt: Math.random().toString(36).substring(2, 10)
+        };
+
+        console.log("Memo data:", JSON.stringify(memoData, null, 2));
+        
+        const payment: Payment = {
+          TransactionType: "Payment",
+          Account: doctorWallet.classicAddress,
+          Destination: PATIENT_ADDRESS,
+          Amount: xrpToDrops((0.001 + Math.random() * 0.0001).toFixed(6)),
+          Memos: [
+            {
+              Memo: {
+                MemoType: Buffer.from("medicalRecord").toString("hex"),
+                MemoData: Buffer.from(JSON.stringify(memoData)).toString("hex"),
+              },
             },
-          },
-        ],
-      };
+          ],
+        };
 
-      const prepared = await client.autofill(payment);
-      const signed = doctorWallet.sign(prepared);
-      const tx = await client.submitAndWait(signed.tx_blob);
+        console.log("Payment object:", JSON.stringify(payment, null, 2));
 
-      // Safe extraction of tx hash
-      const txHashRaw = (tx.result && (tx.result as any).tx_json && (tx.result as any).tx_json.hash) || "";
-      const txHash = String(txHashRaw);
-      const txHashShort = txHash ? `${txHash.slice(0, 16)}...` : "unknown";
+        console.log("Autofilling transaction...");
+        const prepared = await client.autofill(payment);
+        console.log("Transaction prepared");
 
-      console.log("XRPL Transaction:", txHash);
-      await client.disconnect();
+        console.log("Signing transaction...");
+        const signed = doctorWallet.sign(prepared);
+        console.log("Transaction signed");
 
-      Alert.alert(
-        "Upload Successful! ✅",
-        `Medical record uploaded successfully for ${PATIENT_NAME}.\n\n• File: ${file.name}\n• Type: ${recordType}\n• Transaction: ${txHashShort}`,
-        [
-          {
-            text: "View Details",
-            onPress: () => {
-              console.log("Transaction details:", txHash);
+        console.log("Submitting transaction...");
+        const tx = await client.submitAndWait(signed.tx_blob);
+        console.log("Transaction submitted, response:", JSON.stringify(tx, null, 2));
+
+        // Better extraction of tx hash
+        txHash = tx.result.hash || 
+                (tx.result as any).tx_json?.hash || 
+                signed.hash ||
+                "unknown";
+        
+        console.log("Transaction hash:", txHash);
+        
+        // Fix TypeScript error for TransactionResult
+        const txMeta = tx.result.meta;
+        let txResult = "unknown";
+        
+        if (typeof txMeta === 'string') {
+          try {
+            const parsedMeta = JSON.parse(txMeta);
+            txResult = parsedMeta.TransactionResult || "unknown";
+          } catch {
+            txResult = "unknown";
+          }
+        } else if (txMeta && typeof txMeta === 'object') {
+          txResult = (txMeta as any).TransactionResult || "unknown";
+        }
+        
+        console.log("Transaction result:", txResult);
+        
+        if (txResult === "tesSUCCESS") {
+          xrplSuccess = true;
+          console.log("XRPL Transaction successful!");
+        } else {
+          xrplError = `Transaction failed with result: ${txResult}`;
+          console.warn("XRPL Transaction failed:", txResult);
+        }
+        
+        await client.disconnect();
+        console.log("Disconnected from XRPL");
+        
+      } catch (xrplErr: any) {
+        console.error("XRPL submission failed:", xrplErr);
+        xrplError = xrplErr.message || "Unknown XRPL error";
+        console.warn("Continuing with IPFS upload despite XRPL failure");
+      }
+
+      // Success message based on what worked
+      if (xrplSuccess) {
+        const txHashShort = txHash ? `${txHash.slice(0, 16)}...` : "unknown";
+        Alert.alert(
+          "Upload Successful! ✅",
+          `Medical record uploaded successfully for ${PATIENT_NAME}.\n\n• File: ${file.name}\n• Type: ${recordType}\n• IPFS File: ${fileCID}\n• IPFS Metadata: ${metadataCID}\n• XRPL: ${txHashShort}`,
+          [
+            {
+              text: "Upload Another",
+              style: "default",
+              onPress: () => {
+                setFile(null);
+                setRecordType("");
+                setDescription("");
+              },
             },
-          },
-          {
-            text: "Upload Another",
-            style: "default",
-            onPress: () => {
-              setFile(null);
-              setRecordType("");
-              setDescription("");
+            {
+              text: "Done",
+              onPress: () => router.back(),
             },
-          },
-          {
-            text: "Done",
-            onPress: () => router.back(),
-          },
-        ]
-      );
+          ]
+        );
+      } else {
+        Alert.alert(
+          "Upload Partially Successful! ⚠️",
+          `Medical record stored on IPFS but XRPL registration failed.\n\n• File: ${file.name}\n• Type: ${recordType}\n• IPFS File: ${fileCID}\n• IPFS Metadata: ${metadataCID}\n\nError: ${xrplError || "Unknown error"}\n\nRecord is accessible via IPFS but not on blockchain.`,
+          [
+            {
+              text: "View IPFS Details",
+              onPress: () => {
+                Alert.alert(
+                  "IPFS Details",
+                  `File CID: ${fileCID}\nMetadata CID: ${metadataCID}\n\nShare the Metadata CID with the patient to access this record.`
+                );
+              },
+            },
+            {
+              text: "Upload Another",
+              style: "default",
+              onPress: () => {
+                setFile(null);
+                setRecordType("");
+                setDescription("");
+              },
+            },
+            {
+              text: "Done",
+              onPress: () => router.back(),
+            },
+          ]
+        );
+      }
+
     } catch (err: any) {
       console.error("Upload error:", err);
-      
-      let errorMessage = "An unknown error occurred. Please try again.";
-      if (err.message?.includes("temREDUNDANT")) {
-        errorMessage = "This transaction appears to be a duplicate. The record may have already been uploaded. Please try again with a different file or record type.";
-      } else if (err.message?.includes("tecUNFUNDED")) {
-        errorMessage = "Insufficient funds in doctor wallet. Please add XRP to continue.";
-      } else if (err.message?.includes("tecNO_DST")) {
-        errorMessage = "Patient wallet address not found. Please verify the address is correct.";
-      } else if (err.message) {
-        errorMessage = err.message;
+      let errorMessage = "Failed to upload to IPFS storage. Please check your connection and try again.";
+      if (err.message?.includes("Pinata") || err.message?.includes("IPFS")) {
+        errorMessage = "Failed to upload to decentralized storage. Please check your internet connection.";
       }
-      
       Alert.alert("Upload Failed", errorMessage);
     } finally {
       setUploading(false);
@@ -261,8 +353,15 @@ export default function AddRecord() {
             </View>
           </View>
         </View>
+        <View style={styles.doctorInfo}>
+          <View style={styles.addressContainer}>
+            <Ionicons name="medical" size={14} color="#1e3a5f" />
+            <Text style={styles.doctorAddress}>Doctor: {formatAddress(doctorWallet.classicAddress)}</Text>
+          </View>
+        </View>
       </View>
 
+      {/* ... rest of the JSX remains the same ... */}
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Record Type *</Text>
         <TextInput
@@ -370,6 +469,7 @@ export default function AddRecord() {
   );
 }
 
+// Add the new styles for doctor info
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -449,6 +549,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     fontFamily: "monospace",
+  },
+  doctorInfo: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e8f4f8",
+  },
+  doctorAddress: {
+    fontSize: 12,
+    color: "#1e3a5f",
+    fontFamily: "monospace",
+    fontWeight: "600",
   },
   inputContainer: {
     marginBottom: 20,

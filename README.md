@@ -1,50 +1,65 @@
-# Welcome to your Expo app 👋
+# MedaWallet – Decentralized Medical Record Management
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+MedaWallet is a secure, decentralized application (dApp) designed to empower patients and healthcare providers by giving them full control over medical records. Using blockchain technology (XRPL) and decentralized storage (IPFS/Pinata), MedaWallet ensures that medical records are tamper-proof, easily shareable, and privacy-preserving.
 
-## Get started
+---
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+- **Patient-Controlled Records**  
+  Patients own their medical data and can grant/revoke access to doctors and institutions.
 
-2. Start the app
+- **Decentralized Storage**  
+  Files are stored securely on IPFS via Pinata, preventing single points of failure.
 
-   ```bash
-   npx expo start
-   ```
+- **Blockchain Registration**  
+  Medical records are optionally registered on the XRPL testnet, ensuring immutability and verifiable ownership.
 
-In the output, you'll find options to open the app in a
+- **Doctor Uploads**  
+  Doctors can upload reports (PDFs, images, Word documents) with metadata including record type, hospital, and description.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- **Local Fallback**  
+  If blockchain submission fails, transactions are stored locally until the network is available.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- **Quick Record Typing**  
+  Common medical record types are available as quick buttons for faster uploads.
 
-## Get a fresh project
+- **Secure Hashing**  
+  Files are hashed using SHA256 before uploading to maintain integrity.
 
-When you're ready, run:
+---
+
+## Tech Stack
+
+- **Frontend:** React Native, Expo
+- **Blockchain:** XRP Ledger (XRPL) Testnet
+- **Decentralized Storage:** IPFS (via Pinata)
+- **State Management & Storage:** AsyncStorage
+- **Security:** SHA256 file hashing, wallet signing via XRPL SDK
+- **File Handling:** `expo-document-picker`, `expo-file-system`
+
+---
+
+## File Upload Flow
+
+1. Doctor selects a file using the document picker.
+2. File is hashed using SHA256 for integrity.
+3. File is uploaded to IPFS via Pinata.
+4. Metadata about the record is created and uploaded to IPFS.
+5. Transaction is submitted to XRPL with multiple endpoint fallbacks.
+6. If blockchain fails, transaction is stored locally for later submission.
+
+---
+
+## Installation
 
 ```bash
-npm run reset-project
-```
+# Clone the repository
+git clone https://github.com/yourusername/medawallet.git
+cd medawallet
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+# Install dependencies
+npm install
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+# Start the project
+npx expo start

@@ -265,66 +265,96 @@ export default function AccessRequestsPage() {
     fetchRequests();
   }, [fetchRequests]);
 
-  const approveRequest = useCallback(async (request: AccessRequest) => {
-    if (!wallet) return;
+const approveRequest = useCallback(async (request: AccessRequest) => {
+  if (!wallet) return;
 
-    Alert.alert("Approve Access", `Grant access to ${request.requester}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Approve",
-        onPress: async () => {
-          setProcessing(request.id);
-          let client: Client | null = null;
+  Alert.alert("Approve Access", `Grant access to ${request.requester}?`, [
+    { text: "Cancel", style: "cancel" },
+    {
+      text: "Approve",
+      onPress: async () => {
+        setProcessing(request.id);
+        let client: Client | null = null;
 
-          try {
-            client = new Client(XRPL_NETWORK);
-            await client.connect();
+        try {
+          client = new Client(XRPL_NETWORK);
+          await client.connect();
 
-            const payment: Payment = {
-              TransactionType: "Payment",
-              Account: wallet.classicAddress,
-              Destination: wallet.classicAddress, // Self-payment to store the grant memo
-              Amount: xrpToDrops("0.001"),
-              Memos: [
-                {
-                  Memo: {
-                    MemoData: Buffer.from(
-                      JSON.stringify({
-                        type: "grantAccess",
-                        user: request.requester,
-                        documents: [],
-                        timestamp: Math.floor(Date.now() / 1000),
-                      })
-                    ).toString("hex"),
-                  },
+          // Generate a unique identifier to make each transaction different
+          const uniqueId = Math.random().toString(36).substring(2, 15);
+          
+          const payment: Payment = {
+            TransactionType: "Payment",
+            Account: wallet.classicAddress,
+            Destination: wallet.classicAddress, // Self-payment to store the grant memo
+            Amount: xrpToDrops("0.001"), // Small amount for self-payment
+            Memos: [
+              {
+                Memo: {
+                  MemoType: Buffer.from("grantAccess").toString("hex"), // Add MemoType for uniqueness
+                  MemoData: Buffer.from(
+                    JSON.stringify({
+                      type: "grantAccess",
+                      user: request.requester,
+                      timestamp: Math.floor(Date.now() / 1000),
+                      requestId: request.id, // Include the original request ID
+                      uniqueId: uniqueId, // Add unique identifier
+                    })
+                  ).toString("hex"),
                 },
-              ],
-            };
+              },
+            ],
+            LastLedgerSequence: undefined, // Let autofill handle this
+          };
 
-            const prepared = await client.autofill(payment);
-            const signed = wallet.sign(prepared);
-            const tx = await client.submitAndWait(signed.tx_blob);
+          const prepared = await client.autofill(payment);
+          const signed = wallet.sign(prepared);
+          const tx = await client.submitAndWait(signed.tx_blob);
 
-            const txResult = (tx.result.meta as any)?.TransactionResult;
-            if (txResult === "tesSUCCESS") {
-              setRequests((prev) => prev.filter((r) => r.id !== request.id));
-              Alert.alert("Success", `Access granted to ${request.requester}`);
-            } else {
-              throw new Error(`Transaction failed: ${txResult || "Unknown"}`);
-            }
-          } catch (err: any) {
-            console.error("Approval error:", err);
-            Alert.alert("Error", `Failed to grant access: ${err.message}`);
-          } finally {
-            if (client) {
-              await client.disconnect();
-            }
-            setProcessing(null);
+          const txResult = (tx.result.meta as any)?.TransactionResult;
+          if (txResult === "tesSUCCESS") {
+            setRequests((prev) => prev.filter((r) => r.id !== request.id));
+            Alert.alert("Success", `Access granted to ${request.requester}`);
+            
+            // Refresh the requests list to show the updated state
+            setTimeout(() => {
+              fetchRequests();
+            }, 2000);
+          } else {
+            throw new Error(`Transaction failed: ${txResult || "Unknown"}`);
           }
-        },
+        } catch (err: any) {
+          console.error("Approval error:", err);
+          
+          // Check if it's a redundant transaction error
+          if (err.message?.includes("temREDUNDANT") || err.message?.includes("redundant")) {
+            Alert.alert(
+              "Already Processed", 
+              "This access request has already been approved. Refreshing...",
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    // Remove the request and refresh
+                    setRequests((prev) => prev.filter((r) => r.id !== request.id));
+                    fetchRequests();
+                  }
+                }
+              ]
+            );
+          } else {
+            Alert.alert("Error", `Failed to grant access: ${err.message}`);
+          }
+        } finally {
+          if (client) {
+            await client.disconnect();
+          }
+          setProcessing(null);
+        }
       },
-    ]);
-  }, [wallet]);
+    },
+  ]);
+}, [wallet, fetchRequests]);
 
   const denyRequest = useCallback((request: AccessRequest) => {
     Alert.alert("Deny Access", `Deny access request from ${request.requester}?`, [

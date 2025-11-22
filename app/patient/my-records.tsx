@@ -2,7 +2,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Buffer } from "buffer";
 import { Stack } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +28,8 @@ type MedicalRecord = {
   type: string;
 };
 
+const XRPL_NETWORK = "wss://s.altnet.rippletest.net:51233";
+
 export default function MyRecordsPage() {
   const { wallet } = useWallet();
   const [documents, setDocuments] = useState<MedicalRecord[]>([]);
@@ -35,12 +37,33 @@ export default function MyRecordsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [metadata, setMetadata] = useState<Record<string, any>>({});
 
-  const fetchDocuments = async () => {
-    if (!wallet) return;
+  const fetchMetadata = useCallback(async (cid: string) => {
+    try {
+      console.log(`Fetching metadata for CID: ${cid}`);
+      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`Successfully fetched metadata for ${cid}:`, data);
+        setMetadata((prev) => ({ ...prev, [cid]: data }));
+      } else {
+        console.error(`Failed to fetch metadata for ${cid}: ${response.status}`);
+      }
+    } catch (err) {
+      console.error(`Failed to fetch metadata for ${cid}:`, err);
+    }
+  }, []);
+
+  const fetchDocuments = useCallback(async () => {
+    if (!wallet?.classicAddress) {
+      Alert.alert("Error", "Wallet not available");
+      return;
+    }
 
     setLoading(true);
+    let client: Client | null = null;
+
     try {
-      const client = new Client("wss://s.altnet.rippletest.net:51233");
+      client = new Client(XRPL_NETWORK);
       await client.connect();
 
       const resp = await client.request({
@@ -51,77 +74,102 @@ export default function MyRecordsPage() {
         limit: 100,
       });
 
-      const txs = resp.result.transactions || [];
+      const txs = (resp.result as any).transactions || [];
+      console.log(`Found ${txs.length} total transactions`);
+      
       const docs: MedicalRecord[] = [];
 
-      txs.forEach((txItem: any) => {
-        const tx = txItem.tx || {};
-        if (!tx.Memos || !Array.isArray(tx.Memos)) return;
+      for (const txItem of txs) {
+        // The transaction data is in tx_json field based on the doctor's upload structure
+        const tx = txItem.tx_json || txItem.tx || {};
+        
+        console.log(`Processing transaction:`, {
+          hash: tx.hash || txItem.hash,
+          type: tx.TransactionType,
+          from: tx.Account,
+          to: tx.Destination,
+          hasMemos: !!tx.Memos
+        });
 
-        tx.Memos.forEach((memoEntry: any) => {
+        if (!tx.Memos || !Array.isArray(tx.Memos)) {
+          console.log(`No memos found in transaction ${tx.hash}`);
+          continue;
+        }
+
+        console.log(`Found ${tx.Memos.length} memo(s) in transaction ${tx.hash}`);
+
+        for (const memoEntry of tx.Memos) {
           try {
             const memoHex = memoEntry?.Memo?.MemoData;
-            if (!memoHex) return;
+            if (!memoHex) {
+              console.log(`Empty memo data in transaction ${tx.hash}`);
+              continue;
+            }
 
             const memoStr = Buffer.from(memoHex, "hex").toString();
-            const memoObj = JSON.parse(memoStr);
+            console.log(`Raw memo string: ${memoStr.substring(0, 100)}...`);
+
+            let memoObj;
+            try {
+              memoObj = JSON.parse(memoStr);
+              console.log(`Parsed memo object:`, memoObj);
+            } catch (parseErr) {
+              console.log(`Memo is not valid JSON, skipping`);
+              continue;
+            }
 
             // Only show medical records, not access control transactions
             if (memoObj.type === "medicalRecord" && memoObj.metadataCID) {
-              docs.push({
-                txHash: tx.hash,
+              console.log(`✅ Found medical record with metadataCID: ${memoObj.metadataCID}`);
+              
+              const record: MedicalRecord = {
+                txHash: tx.hash || txItem.hash,
                 metadataCID: memoObj.metadataCID,
                 timestamp: memoObj.timestamp || tx.date || Math.floor(Date.now() / 1000),
                 recordType: memoObj.recordType,
                 doctorWallet: tx.Account, // The sender is the doctor
                 type: memoObj.type,
-              });
+              };
+
+              docs.push(record);
+              
+              // Fetch metadata for this record
+              await fetchMetadata(memoObj.metadataCID);
+            } else {
+              console.log(`Skipping memo type: ${memoObj.type}`);
             }
-          } catch {
-            // skip invalid memo
+          } catch (err) {
+            console.error(`Error processing memo in transaction ${tx.hash}:`, err);
           }
-        });
-      });
+        }
+      }
 
       // Sort by timestamp, newest first
       docs.sort((a, b) => b.timestamp - a.timestamp);
 
+      console.log(`Total medical records found: ${docs.length}`);
       setDocuments(docs);
       
-      // Fetch metadata for each record
-      docs.forEach((doc) => fetchMetadata(doc.metadataCID));
-
-      await client.disconnect();
     } catch (err) {
-      console.error(err);
-      Alert.alert("Error", "Failed to fetch medical records.");
+      console.error("Failed to fetch medical records:", err);
+      Alert.alert("Error", "Failed to fetch medical records. Please check your connection.");
     } finally {
+      if (client) {
+        await client.disconnect();
+      }
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  const fetchMetadata = async (cid: string) => {
-    try {
-      // Fetch from IPFS gateway
-      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
-      if (response.ok) {
-        const data = await response.json();
-        setMetadata((prev) => ({ ...prev, [cid]: data }));
-      }
-    } catch (err) {
-      console.error(`Failed to fetch metadata for ${cid}:`, err);
-    }
-  };
+  }, [wallet, fetchMetadata]);
 
   useEffect(() => {
     fetchDocuments();
-  }, [wallet]);
+  }, [fetchDocuments]);
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchDocuments();
-  };
+  }, [fetchDocuments]);
 
   const openIPFS = (cid: string) => {
     const url = `https://gateway.pinata.cloud/ipfs/${cid}`;
@@ -141,18 +189,46 @@ export default function MyRecordsPage() {
     );
   };
 
-  const renderRecord = ({ item }: { item: MedicalRecord }) => {
+  const downloadFile = async (fileCID: string, fileName: string) => {
+    try {
+      const url = `https://gateway.pinata.cloud/ipfs/${fileCID}`;
+      const response = await fetch(url);
+      const blob = await response.blob();
+      
+      // For React Native, you might need a different approach for actual file download
+      // This is a simplified version - in a real app, you'd use a file system library
+      console.log(`Downloading file: ${fileName} from ${fileCID}`);
+      Alert.alert("Download", `File ${fileName} would be downloaded in a real app.`);
+    } catch (err) {
+      console.error("Download error:", err);
+      Alert.alert("Error", "Failed to download file");
+    }
+  };
+
+  const renderRecord = useCallback(({ item }: { item: MedicalRecord }) => {
     const meta = metadata[item.metadataCID];
     const recordType = item.recordType || meta?.record_type || "Medical Record";
     const hospital = meta?.hospital || "Unknown Hospital";
     const description = meta?.description || "No description available";
     const fileCID = meta?.ipfs_file_cid;
+    const fileName = meta?.extra?.original_filename || "document";
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Ionicons name="medical" size={24} color="#1e3a5f" />
-          <Text style={styles.recordType}>{recordType}</Text>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.recordType}>{recordType}</Text>
+            <Text style={styles.timestamp}>
+              {new Date(item.timestamp * 1000).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+              })}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.infoRow}>
@@ -160,39 +236,50 @@ export default function MyRecordsPage() {
           <Text style={styles.infoText}>{hospital}</Text>
         </View>
 
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar-outline" size={16} color="#666" />
-          <Text style={styles.infoText}>
-            {new Date(item.timestamp * 1000).toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </Text>
-        </View>
-
         {item.doctorWallet && (
           <View style={styles.infoRow}>
             <Ionicons name="person-outline" size={16} color="#666" />
             <Text style={styles.infoText} numberOfLines={1}>
-              {item.doctorWallet.substring(0, 20)}...
+              Doctor: {item.doctorWallet}
             </Text>
           </View>
         )}
 
         {description && (
-          <Text style={styles.description}>{description}</Text>
+          <View style={styles.descriptionContainer}>
+            <Ionicons name="document-text-outline" size={16} color="#666" />
+            <Text style={styles.description}>{description}</Text>
+          </View>
+        )}
+
+        {meta?.hash_of_file && (
+          <View style={styles.infoRow}>
+            <Ionicons name="finger-print-outline" size={16} color="#666" />
+            <Text style={styles.hashText} numberOfLines={1}>
+              Hash: {meta.hash_of_file.substring(0, 20)}...
+            </Text>
+          </View>
         )}
 
         <View style={styles.buttonContainer}>
           {fileCID && (
-            <TouchableOpacity
-              style={styles.viewButton}
-              onPress={() => viewFile(fileCID)}
-            >
-              <Ionicons name="document-text-outline" size={18} color="#fff" />
-              <Text style={styles.buttonText}>View File</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={styles.viewButton}
+                onPress={() => viewFile(fileCID)}
+              >
+                <Ionicons name="eye-outline" size={18} color="#fff" />
+                <Text style={styles.buttonText}>View</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={() => downloadFile(fileCID, fileName)}
+              >
+                <Ionicons name="download-outline" size={18} color="#1e3a5f" />
+                <Text style={styles.downloadButtonText}>Download</Text>
+              </TouchableOpacity>
+            </>
           )}
 
           <TouchableOpacity
@@ -205,14 +292,52 @@ export default function MyRecordsPage() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.cidLabel}>Tx Hash: </Text>
+          <Text style={styles.cidLabel}>Tx: </Text>
           <Text style={styles.cidText} numberOfLines={1}>
             {item.txHash}
           </Text>
         </View>
+        
+        {item.metadataCID && (
+          <View style={styles.footer}>
+            <Text style={styles.cidLabel}>Metadata: </Text>
+            <Text style={styles.cidText} numberOfLines={1}>
+              {item.metadataCID}
+            </Text>
+          </View>
+        )}
       </View>
     );
-  };
+  }, [metadata]);
+
+  const renderEmptyState = useCallback(() => (
+    <View style={styles.empty}>
+      <Ionicons name="document-text-outline" size={64} color="#ccc" />
+      <Text style={styles.emptyText}>No medical records found</Text>
+      <Text style={styles.emptySubtext}>
+        Your medical records uploaded by healthcare providers will appear here
+      </Text>
+      
+      {/* Debug information */}
+      <View style={styles.debugSection}>
+        <Text style={styles.debugTitle}>Debug Information</Text>
+        <Text style={styles.debugText}>
+          • Your wallet: {wallet?.classicAddress}
+        </Text>
+        <Text style={styles.debugText}>
+          • Make sure doctors are sending medicalRecord transactions to your address
+        </Text>
+        <Text style={styles.debugText}>
+          • Check that transactions contain medicalRecord memos with metadataCID
+        </Text>
+      </View>
+      
+      <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
+        <Ionicons name="refresh" size={20} color="#1e3a5f" />
+        <Text style={styles.refreshButtonText}>Refresh</Text>
+      </TouchableOpacity>
+    </View>
+  ), [wallet?.classicAddress, onRefresh]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -223,22 +348,15 @@ export default function MyRecordsPage() {
           <ActivityIndicator size="large" color="#1e3a5f" />
           <Text style={styles.loadingText}>Loading your records...</Text>
         </View>
-      ) : documents.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="document-text-outline" size={64} color="#ccc" />
-          <Text style={styles.emptyText}>No medical records found</Text>
-          <Text style={styles.emptySubtext}>
-            Your medical records uploaded by healthcare providers will appear here
-          </Text>
-        </View>
       ) : (
         <FlatList
           data={documents}
           keyExtractor={(item) => item.txHash}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={documents.length === 0 ? styles.emptyContainer : { padding: 16 }}
           renderItem={renderRecord}
           refreshing={refreshing}
           onRefresh={onRefresh}
+          ListEmptyComponent={renderEmptyState}
         />
       )}
     </SafeAreaView>
@@ -257,6 +375,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
   },
+  emptyContainer: {
+    flex: 1,
+  },
   empty: {
     flex: 1,
     justifyContent: "center",
@@ -274,6 +395,42 @@ const styles = StyleSheet.create({
     color: "#999",
     marginTop: 8,
     textAlign: "center",
+    marginBottom: 20,
+  },
+  debugSection: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1e7ff",
+    width: "100%",
+  },
+  debugTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1e3a5f",
+    marginBottom: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    color: "#1e3a5f",
+    marginBottom: 4,
+  },
+  refreshButton: {
+    marginTop: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e8f4f8",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1e3a5f",
   },
   card: {
     backgroundColor: "#fff",
@@ -290,15 +447,22 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 12,
+  },
+  headerTextContainer: {
+    marginLeft: 8,
+    flex: 1,
   },
   recordType: {
     fontSize: 18,
     fontWeight: "700",
     color: "#0b1b3b",
-    marginLeft: 8,
-    flex: 1,
+  },
+  timestamp: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 2,
   },
   infoRow: {
     flexDirection: "row",
@@ -311,12 +475,25 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
   },
+  hashText: {
+    fontSize: 12,
+    color: "#666",
+    marginLeft: 8,
+    flex: 1,
+    fontFamily: "monospace",
+  },
+  descriptionContainer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
   description: {
     fontSize: 14,
     color: "#666",
-    marginTop: 8,
-    marginBottom: 12,
+    marginLeft: 8,
+    flex: 1,
     fontStyle: "italic",
+    lineHeight: 18,
   },
   buttonContainer: {
     flexDirection: "row",
@@ -332,7 +509,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  metadataButton: {
+  downloadButton: {
     flex: 1,
     backgroundColor: "#e8f4f8",
     paddingVertical: 10,
@@ -343,21 +520,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#1e3a5f",
   },
+  metadataButton: {
+    flex: 1,
+    backgroundColor: "#f8f8f8",
+    paddingVertical: 10,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
   buttonText: {
     color: "#fff",
     fontWeight: "600",
     marginLeft: 6,
+    fontSize: 14,
   },
-  metadataButtonText: {
+  downloadButtonText: {
     color: "#1e3a5f",
     fontWeight: "600",
     marginLeft: 6,
+    fontSize: 14,
+  },
+  metadataButtonText: {
+    color: "#666",
+    fontWeight: "600",
+    marginLeft: 6,
+    fontSize: 14,
   },
   footer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#e0e0e0",
   },

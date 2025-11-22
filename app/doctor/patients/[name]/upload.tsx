@@ -136,6 +136,10 @@ export default function AddRecord() {
       const client = new Client("wss://s.altnet.rippletest.net:51233");
       await client.connect();
 
+      // Generate unique identifiers to prevent redundant transactions
+      const uniqueId = Math.random().toString(36).substring(2, 15);
+      const timestamp = Math.floor(Date.now() / 1000);
+      
       const payment: Payment = {
         TransactionType: "Payment",
         Account: doctorWallet.classicAddress,
@@ -144,13 +148,16 @@ export default function AddRecord() {
         Memos: [
           {
             Memo: {
+              MemoType: Buffer.from("medicalRecord").toString("hex"), // Add MemoType for uniqueness
               MemoData: Buffer.from(
                 JSON.stringify({
                   type: "medicalRecord",
                   metadataCID,
                   recordType: recordType.trim(),
-                  timestamp: Math.floor(Date.now() / 1000),
+                  timestamp: timestamp,
                   doctor: doctorWallet.classicAddress,
+                  fileHash: fileHash.substring(0, 16), // Include part of file hash
+                  uniqueId: uniqueId, // Add unique identifier
                 })
               ).toString("hex"),
             },
@@ -200,9 +207,11 @@ export default function AddRecord() {
       
       let errorMessage = "An unknown error occurred. Please try again.";
       if (err.message?.includes("temREDUNDANT")) {
-        errorMessage = "This transaction appears to be a duplicate. Please try again with different details.";
+        errorMessage = "This transaction appears to be a duplicate. The record may have already been uploaded. Please try again with a different file or record type.";
       } else if (err.message?.includes("tecUNFUNDED")) {
         errorMessage = "Insufficient funds in doctor wallet. Please add XRP to continue.";
+      } else if (err.message?.includes("tecNO_DST")) {
+        errorMessage = "Patient wallet address not found. Please verify the address is correct.";
       } else if (err.message) {
         errorMessage = err.message;
       }
